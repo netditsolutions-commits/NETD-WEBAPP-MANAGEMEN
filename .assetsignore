@@ -1,0 +1,9 @@
+_worker.js
+worker.js
+wrangler.toml
+schema.sql
+README.md
+*.rar
+*.pdf
+dom_dump.txt
+test_dom.html
