@@ -116,11 +116,46 @@ export default {
         }
       }
 
+      // Auto-initialize schema if not exists
+      const ensureSchema = async () => {
+        try {
+          await db.exec(`
+            CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY DEFAULT 'setting_01', shop_name TEXT NOT NULL DEFAULT 'NETD IT Solutions & Services', shop_subtitle TEXT, phone TEXT, email TEXT, address TEXT, tax_id TEXT, currency TEXT DEFAULT 'LAK', currency_symbol TEXT DEFAULT '₭', tax_rate REAL DEFAULT 7.0, logo_url TEXT, bank_name TEXT, bank_account_no TEXT, bank_account_name TEXT, bank_qr_url TEXT, d1_worker_url TEXT, theme TEXT DEFAULT 'dark', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, name TEXT NOT NULL, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'technician', role_name TEXT, position TEXT, phone TEXT, email TEXT, avatar TEXT, address TEXT, joined_date DATE, salary REAL DEFAULT 0, status TEXT DEFAULT 'active', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'individual', name TEXT NOT NULL, company TEXT, contact_person TEXT, phone TEXT NOT NULL, email TEXT, address TEXT, tax_id TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT UNIQUE NOT NULL, description TEXT, icon TEXT DEFAULT 'fa-box', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS brands (id TEXT PRIMARY KEY, name TEXT NOT NULL, logo_url TEXT, category_id TEXT, contact_info TEXT, warranty_policy TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, contact_person TEXT, phone TEXT NOT NULL, email TEXT, address TEXT, payment_terms TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, sku TEXT UNIQUE NOT NULL, name TEXT NOT NULL, model TEXT, sn_or_mac TEXT, category_id TEXT NOT NULL, brand_id TEXT, supplier_id TEXT, supplier_name TEXT, cost_price REAL NOT NULL DEFAULT 0, selling_price REAL NOT NULL DEFAULT 0, stock_qty INTEGER NOT NULL DEFAULT 0, min_stock_alert INTEGER NOT NULL DEFAULT 3, unit TEXT NOT NULL DEFAULT 'ເຄື່ອງ', warranty_period TEXT DEFAULT '1 ປີ', location TEXT, image_url TEXT, barcode TEXT, specifications TEXT, status TEXT DEFAULT 'in_stock', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS product_serials (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, serial_number TEXT UNIQUE NOT NULL, mac_address TEXT, status TEXT NOT NULL DEFAULT 'in_stock', warranty_months INTEGER DEFAULT 12, customer_id TEXT, customer_name TEXT, sold_date DATE, warranty_expire DATE, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS inventory_logs (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, product_name TEXT, type TEXT NOT NULL, qty INTEGER NOT NULL, prev_qty INTEGER NOT NULL, new_qty INTEGER NOT NULL, ref_doc_id TEXT, notes TEXT, performed_by TEXT, date DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS purchase_orders (id TEXT PRIMARY KEY, po_number TEXT UNIQUE NOT NULL, supplier_id TEXT NOT NULL, supplier_name TEXT NOT NULL, order_date DATE NOT NULL, expected_date DATE, status TEXT NOT NULL DEFAULT 'draft', subtotal REAL NOT NULL DEFAULT 0, shipping_cost REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, notes TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, doc_number TEXT UNIQUE NOT NULL, type TEXT NOT NULL, customer_id TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, customer_address TEXT, date DATE NOT NULL, due_date DATE, ref_doc_id TEXT, ref_quotation_no TEXT, subtotal REAL NOT NULL DEFAULT 0, tax_rate REAL DEFAULT 0, tax_amount REAL DEFAULT 0, discount_amount REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, paid_amount REAL DEFAULT 0, balance_amount REAL DEFAULT 0, payment_method TEXT DEFAULT 'transfer', status TEXT NOT NULL DEFAULT 'draft', notes TEXT, terms_conditions TEXT, items_json TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS document_items (id TEXT PRIMARY KEY, document_id TEXT NOT NULL, product_id TEXT, item_code TEXT, item_name TEXT NOT NULL, item_model TEXT, item_sn TEXT, qty INTEGER NOT NULL DEFAULT 1, unit TEXT DEFAULT 'ເຄື່ອງ', unit_price REAL NOT NULL DEFAULT 0, discount REAL DEFAULT 0, total_price REAL NOT NULL DEFAULT 0, warranty TEXT DEFAULT '1 ປີ', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, project_code TEXT UNIQUE NOT NULL, name TEXT NOT NULL, customer_id TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, service_type TEXT NOT NULL DEFAULT 'cctv', category_id TEXT, category_name TEXT, status TEXT NOT NULL DEFAULT 'survey', start_date DATE, target_date DATE, completion_date DATE, budget REAL DEFAULT 0, cost_actual REAL DEFAULT 0, profit REAL DEFAULT 0, lead_technician_id TEXT, lead_technician_name TEXT, assigned_team TEXT, scope_of_work TEXT, location TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS project_tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT, assigned_to TEXT, assigned_name TEXT, due_date DATE, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS project_categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT UNIQUE NOT NULL, color TEXT DEFAULT 'sky', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS it_job_categories (id TEXT PRIMARY KEY, key TEXT UNIQUE NOT NULL, name TEXT NOT NULL, description TEXT, color TEXT DEFAULT 'sky', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS it_jobs (id TEXT PRIMARY KEY, job_code TEXT UNIQUE NOT NULL, customer_name TEXT NOT NULL, customer_phone TEXT, job_type TEXT NOT NULL DEFAULT 'onsite', device_model TEXT, serial_or_mac TEXT, issue_description TEXT NOT NULL, technician_id TEXT, technician_name TEXT, service_fee REAL DEFAULT 0, parts_replaced TEXT, status TEXT DEFAULT 'pending', received_date DATE DEFAULT CURRENT_TIMESTAMP, completed_date DATE, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, type TEXT NOT NULL, category TEXT NOT NULL, amount REAL NOT NULL, date DATE NOT NULL, ref_doc_id TEXT, description TEXT NOT NULL, payment_method TEXT DEFAULT 'transfer', recorded_by TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS client_systems (id TEXT PRIMARY KEY, system_name TEXT NOT NULL, customer_id TEXT NOT NULL, domain_url TEXT, hosting_provider TEXT, launch_date DATE, expiry_date DATE, sla_type TEXT DEFAULT 'SLA Gold 24/7', status TEXT DEFAULT 'active', price REAL DEFAULT 0, tech_stack TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS activity_logs (id TEXT PRIMARY KEY, user TEXT, action TEXT, module TEXT, details TEXT, time TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+          `);
+        } catch (e) {
+          console.warn("Schema init error:", e.message);
+        }
+      };
+
       // Helper: get valid column names for a table in SQLite
       const getTableColumns = async (tableName) => {
         try {
-          const { results } = await db.prepare(`PRAGMA table_info(${tableName})`).all();
-          return results.map(r => r.name);
+          let { results } = await db.prepare(`PRAGMA table_info(${tableName})`).all();
+          if (!results || results.length === 0) {
+            await ensureSchema();
+            const recheck = await db.prepare(`PRAGMA table_info(${tableName})`).all();
+            results = recheck.results;
+          }
+          return (results || []).map(r => r.name);
         } catch (e) {
           return [];
         }
@@ -199,7 +234,47 @@ export default {
             if (table === "settings" && !row.id) row.id = "setting_01";
             if (!row.id) row.id = "row_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
 
-            // Special mapping for itemsJson
+            // Special mappings for specific tables
+            if (table === "documents") {
+              if (!row.type && rawRow.docType) row.type = rawRow.docType;
+              if (row.type && !row.doc_type) row.doc_type = row.type;
+              if (row.total_amount === undefined && rawRow.grandTotal !== undefined) row.total_amount = rawRow.grandTotal;
+              if (row.grand_total === undefined && rawRow.grandTotal !== undefined) row.grand_total = rawRow.grandTotal;
+              if (row.discount_amount === undefined && rawRow.discount !== undefined) row.discount_amount = rawRow.discount;
+              if (rawRow.items && !row.items_json) row.items_json = JSON.stringify(rawRow.items);
+            }
+
+            if (table === "products") {
+              if (row.selling_price === undefined && rawRow.salePrice !== undefined) row.selling_price = rawRow.salePrice;
+              if (row.sale_price === undefined && rawRow.salePrice !== undefined) row.sale_price = rawRow.salePrice;
+              if (row.min_stock_alert === undefined && rawRow.minStock !== undefined) row.min_stock_alert = rawRow.minStock;
+              if (row.min_stock === undefined && rawRow.minStock !== undefined) row.min_stock = rawRow.minStock;
+            }
+
+            if (table === "purchase_orders") {
+              if (rawRow.items && !row.items_json) row.items_json = JSON.stringify(rawRow.items);
+            }
+
+            if (table === "projects") {
+              if (!row.project_code && rawRow.code) row.project_code = rawRow.code;
+              if (!row.code && rawRow.code) row.code = rawRow.code;
+              if (!row.name && rawRow.title) row.name = rawRow.title;
+              if (!row.title && rawRow.title) row.title = rawRow.title;
+              if (!row.target_date && rawRow.deadline) row.target_date = rawRow.deadline;
+              if (rawRow.milestones && !row.milestones_json) row.milestones_json = JSON.stringify(rawRow.milestones);
+            }
+
+            if (table === "project_tasks") {
+              if (!row.due_date && rawRow.deadline) row.due_date = rawRow.deadline;
+              if (!row.deadline && rawRow.deadline) row.deadline = rawRow.deadline;
+            }
+
+            if (table === "transactions") {
+              if (!row.ref_doc_id && rawRow.refDoc) row.ref_doc_id = rawRow.refDoc;
+              if (!row.ref_doc && rawRow.refDoc) row.ref_doc = rawRow.refDoc;
+            }
+
+            // General itemsJson fallback
             if (rawRow.items && !row.items_json) {
               row.items_json = JSON.stringify(rawRow.items);
             }
@@ -261,6 +336,7 @@ export default {
         };
 
         const resultData = {};
+        await ensureSchema();
 
         for (const [clientKey, dbTable] of Object.entries(pullMap)) {
           try {
@@ -271,9 +347,55 @@ export default {
             } else {
               resultData[clientKey] = (results || []).map(r => {
                 const camel = objectToCamel(r);
-                if (camel.itemsJson) {
+
+                // Documents mapping
+                if (clientKey === "documents") {
+                  if (!camel.docType && camel.type) camel.docType = camel.type;
+                  if (!camel.type && camel.docType) camel.type = camel.docType;
+                  if (camel.grandTotal === undefined && camel.totalAmount !== undefined) camel.grandTotal = camel.totalAmount;
+                  if (camel.discount === undefined && camel.discountAmount !== undefined) camel.discount = camel.discountAmount;
+                  if (camel.itemsJson) {
+                    try { camel.items = JSON.parse(camel.itemsJson); } catch (e) {}
+                  }
+                }
+
+                // Products mapping
+                if (clientKey === "products") {
+                  if (camel.salePrice === undefined && camel.sellingPrice !== undefined) camel.salePrice = camel.sellingPrice;
+                  if (camel.minStock === undefined && camel.minStockAlert !== undefined) camel.minStock = camel.minStockAlert;
+                }
+
+                // Purchase orders mapping
+                if (clientKey === "purchaseOrders") {
+                  if (camel.itemsJson) {
+                    try { camel.items = JSON.parse(camel.itemsJson); } catch (e) {}
+                  }
+                }
+
+                // Projects mapping
+                if (clientKey === "projects") {
+                  if (!camel.code && camel.projectCode) camel.code = camel.projectCode;
+                  if (!camel.title && camel.name) camel.title = camel.name;
+                  if (!camel.deadline && camel.targetDate) camel.deadline = camel.targetDate;
+                  if (camel.milestonesJson) {
+                    try { camel.milestones = JSON.parse(camel.milestonesJson); } catch (e) {}
+                  }
+                }
+
+                // Project tasks mapping
+                if (clientKey === "tasks") {
+                  if (!camel.deadline && camel.dueDate) camel.deadline = camel.dueDate;
+                }
+
+                // Transactions mapping
+                if (clientKey === "transactions") {
+                  if (!camel.refDoc && camel.refDocId) camel.refDoc = camel.refDocId;
+                }
+
+                if (camel.itemsJson && !camel.items) {
                   try { camel.items = JSON.parse(camel.itemsJson); } catch (e) {}
                 }
+
                 return camel;
               });
             }
@@ -329,76 +451,27 @@ export default {
             allowedAdminPass.includes(password) ||
             passwordHash === defaultAdminHash
           );
-          const match = user.password === pass || 
-                        user.password === passwordHash || 
-                        isAdminMatch;
-          if (match) {
+
+          if (user.password === pass || user.password === passwordHash || isAdminMatch) {
             delete user.password;
             return json({
               success: true,
               user: objectToCamel(user),
-              token: "d1_token_" + Date.now() + "_" + Math.random().toString(36).substring(2)
+              token: "netd_session_" + Date.now() + "_" + Math.random().toString(36).substr(2)
             });
           }
         }
-        return json({ success: false, error: "ຊື່ຜູ້ໃຊ້ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ" }, 401);
+
+        return json({ success: false, error: "Invalid username or password" }, 401);
       }
 
-      // 4. REST Table operations: /api/table/:name
-      const match = url.pathname.match(/^\/api\/table\/([a-zA-Z0-9_]+)(\/([a-zA-Z0-9_-]+))?$/);
-      if (match) {
-        const table = match[1];
-        const recordId = match[3];
-
-        if (request.method === "GET") {
-          if (recordId) {
-            const row = await db.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(recordId).first();
-            if (!row) return json({ success: false, error: "Record not found" }, 404);
-            return json({ success: true, data: objectToCamel(row) });
-          } else {
-            const { results } = await db.prepare(`SELECT * FROM ${table}`).all();
-            return json({ success: true, data: (results || []).map(r => objectToCamel(r)) });
-          }
-        }
-
-        if (request.method === "POST") {
-          const data = await request.json();
-          const row = objectToSnake(data);
-          const validCols = await getTableColumns(table);
-          const filteredKeys = Object.keys(row).filter(k => validCols.includes(k));
-          const cols = filteredKeys.join(", ");
-          const placeholders = filteredKeys.map(() => "?").join(", ");
-          const values = filteredKeys.map(k => typeof row[k] === "object" ? JSON.stringify(row[k]) : row[k]);
-          await db.prepare(`INSERT OR REPLACE INTO ${table} (${cols}) VALUES (${placeholders})`).bind(...values).run();
-          return json({ success: true, message: "Saved successfully", id: data.id });
-        }
-
-        if (request.method === "DELETE" && recordId) {
-          await db.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(recordId).run();
-          return json({ success: true, message: "Deleted successfully" });
-        }
-      }
-
-      // Default endpoint
-      return json({
-        app: "NETD IT Management System API",
-        version: "3.0.0",
-        d1_status: "ready",
-        endpoints: [
-          "/api/ping",
-          "/api/query",
-          "/api/sync-all",
-          "/api/pull-all",
-          "/api/auth/login",
-          "/api/table/:name",
-          "/api/warranty/:sn"
-        ]
-      });
+      return json({ success: false, error: "Not Found", status: 404 }, 404);
 
     } catch (err) {
       return json({
         success: false,
-        error: err.message || "Internal server error"
+        error: err.message,
+        stack: err.stack
       }, 500);
     }
   }
