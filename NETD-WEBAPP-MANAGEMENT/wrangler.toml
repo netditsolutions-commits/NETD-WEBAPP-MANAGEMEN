@@ -1,0 +1,14 @@
+name = "netd-manage-webapp"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# Cloudflare D1 Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "netd_it_management"
+database_id = "2bf366d0-ad6e-45dc-8e27-c4422cb999a4"
+
+# Workers Static Assets (Serves index.html, css, js directly on the worker domain)
+[assets]
+directory = "./"
+binding = "ASSETS"
