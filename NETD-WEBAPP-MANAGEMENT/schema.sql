@@ -286,7 +286,11 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 /* SEED DATA (ຂໍ້ມູນເລີ່ມຕົ້ນ)                                                  */
 /* ============================================================================ */
 
-INSERT OR IGNORE INTO employees (id, name, username, password, role, role_name, position, phone, email, status) VALUES ('emp_01', 'ສົມສັກ ແກ້ວມະນີ', 'admin', 'p@ss4admin', 'admin', 'Admin (ສິດສູງສຸດ)', 'ຜູ້ຈັດການທົ່ວໄປ (General Manager)', '020 5555 8888', 'somsack@netd-it.la', 'active');
+INSERT OR IGNORE INTO employees (id, name, username, password, role, role_name, position, phone, email, status) VALUES 
+('emp_01', 'ສົມສັກ ແກ້ວມະນີ', 'admin', 'p@ss4admin', 'admin', 'Admin (ສິດສູງສຸດ)', 'ຜູ້ຈັດການທົ່ວໄປ (General Manager)', '020 5555 8888', 'somsack@netd-it.la', 'active'),
+('emp_02', 'ສົມໄຊ ໄຊຍະວົງ', 'somxay', 'tech123', 'technician', 'Technician (ຊ່າງໄອທີ)', 'ຫົວໜ້າທີມຊ່າງໄອທີ (Lead IT Tech)', '020 7788 9911', 'somxay.tech@netd-it.la', 'active'),
+('emp_03', 'ຈຳປາ ວົງວິໄລ', 'champa', 'acc123', 'officer', 'Officer (ພະນັກງານທົ່ວໄປ)', 'ຫົວໜ້າຝ່າຍບັນຊີ ແລະ ເອກະສານ', '020 2233 4455', 'champa.acc@netd-it.la', 'active'),
+('emp_04', 'ຄຳຫຼ້າ ສຸລິຍະ', 'khamla', 'sales123', 'officer', 'Officer (ພະນັກງານທົ່ວໄປ)', 'ພະນັກງານຂາຍ ແລະ ປະສານງານ (Sales)', '020 9988 7766', 'khamla.sales@netd-it.la', 'active');
 
 INSERT OR IGNORE INTO settings (id, shop_name, shop_subtitle, phone, email, address, tax_id, bank_name, bank_account_no, bank_account_name, theme) VALUES ('setting_01', 'NETD IT Solutions & Services', 'ສູນບໍລິການຕິດຕັ້ງ ແລະ ຈັດຈຳໜ່າຍອຸປະກອນໄອທີຄົບວົງຈອນ', '+856 20 5555 8888 / 021 456 789', 'info@netd-it.la', 'ຖະໜົນ ໄກສອນ ພົມວິຫານ, ບ້ານ ໂພນສະອາດ, ເມືອງ ໄຊເສດຖາ, ນະຄອນຫຼວງວຽງຈັນ', 'TAX-0102030405-LA', 'ທະນາຄານການຄ້າຕ່າງປະເທດລາວ (BCEL)', '010-12-00-01234567-001', 'NETD IT SOLUTIONS & SERVICES', 'dark');
 

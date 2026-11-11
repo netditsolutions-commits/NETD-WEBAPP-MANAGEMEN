@@ -219,11 +219,24 @@ export default {
         }
       }
 
-      // Auto-initialize schema if not exists (Cached to run at most once per Worker isolate)
+      // Auto-initialize schema if not exists (Uses versioning to consume ONLY 1 subrequest on normal requests)
       const ensureSchema = async () => {
         if (isSchemaEnsured) return;
         try {
+          // Check if schema version 4 is already applied (1 subrequest)
+          try {
+            const meta = await db.prepare("SELECT version FROM _schema_meta WHERE version = 4").first();
+            if (meta && meta.version === 4) {
+              isSchemaEnsured = true;
+              return;
+            }
+          } catch (e) {
+            // _schema_meta table doesn't exist yet, continue to initialize below
+          }
+
+          // Step 1: Create all tables with full columns in 1 single exec (1 subrequest)
           await db.exec(`
+            CREATE TABLE IF NOT EXISTS _schema_meta (version INTEGER PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS settings (
               id TEXT PRIMARY KEY DEFAULT 'setting_01', 
               shop_name TEXT NOT NULL DEFAULT 'NETD IT Solutions & Services', 
@@ -269,7 +282,7 @@ export default {
             CREATE TABLE IF NOT EXISTS activity_logs (id TEXT PRIMARY KEY, user TEXT, action TEXT, module TEXT, details TEXT, time TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
           `);
 
-          // Safe column migrations for older existing databases
+          // Step 2: Safe column migrations for older existing databases
           const migrations = [
             "ALTER TABLE settings ADD COLUMN shop_name_lao TEXT DEFAULT 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ'",
             "ALTER TABLE settings ADD COLUMN shop_subtitle TEXT DEFAULT 'ສູນບໍລິການຕິດຕັ້ງ ແລະ ຈັດຈຳໜ່າຍອຸປະກອນໄອທີຄົບວົງຈອນ'",
@@ -320,12 +333,22 @@ export default {
             try { await db.exec(sql); } catch (e) {}
           }
 
-          // Ensure default setting row exists in D1
+          // Step 3: Seed default settings and employees if not exist
           try {
             await db.exec(`
               INSERT OR IGNORE INTO settings (id, shop_name, shop_name_lao, website) 
-              VALUES ('setting_01', 'NETD IT Solutions & Services', 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ', 'www.netditsolutions.com')
+              VALUES ('setting_01', 'NETD IT Solutions & Services', 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ', 'www.netditsolutions.com');
+              INSERT OR IGNORE INTO employees (id, name, username, password, role, role_name, position, phone, email, status) VALUES 
+              ('emp_01', 'ສົມສັກ ແກ້ວມະນີ', 'admin', 'p@ss4admin', 'admin', 'Admin (ສິດສູງສຸດ)', 'ຜູ້ຈັດການທົ່ວໄປ (General Manager)', '020 5555 8888', 'somsack@netd-it.la', 'active'),
+              ('emp_02', 'ສົມໄຊ ໄຊຍະວົງ', 'somxay', 'tech123', 'technician', 'Technician (ຊ່າງໄອທີ)', 'ຫົວໜ້າທີມຊ່າງໄອທີ (Lead IT Tech)', '020 7788 9911', 'somxay.tech@netd-it.la', 'active'),
+              ('emp_03', 'ຈຳປາ ວົງວິໄລ', 'champa', 'acc123', 'officer', 'Officer (ພະນັກງານທົ່ວໄປ)', 'ຫົວໜ້າຝ່າຍບັນຊີ ແລະ ເອກະສານ', '020 2233 4455', 'champa.acc@netd-it.la', 'active'),
+              ('emp_04', 'ຄຳຫຼ້າ ສຸລິຍະ', 'khamla', 'sales123', 'officer', 'Officer (ພະນັກງານທົ່ວໄປ)', 'ພະນັກງານຂາຍ ແລະ ປະສານງານ (Sales)', '020 9988 7766', 'khamla.sales@netd-it.la', 'active');
             `);
+          } catch (e) {}
+
+          // Step 4: Record version 4 in _schema_meta so migrations never run again (conserves subrequests)
+          try {
+            await db.prepare("INSERT OR REPLACE INTO _schema_meta (version) VALUES (4)").run();
           } catch (e) {}
 
           isSchemaEnsured = true;
@@ -564,7 +587,15 @@ export default {
         if (allStmts.length > 0) {
           const chunkSize = 50;
           for (let i = 0; i < allStmts.length; i += chunkSize) {
-            await db.batch(allStmts.slice(i, i + chunkSize));
+            try {
+              await db.batch(allStmts.slice(i, i + chunkSize));
+            } catch (batchErr) {
+              console.warn(`Batch execution warning at chunk ${i}:`, batchErr.message);
+              // Fallback: run statements individually in this chunk
+              for (const stmt of allStmts.slice(i, i + chunkSize)) {
+                try { await stmt.run(); } catch (singleErr) {}
+              }
+            }
           }
         }
 
