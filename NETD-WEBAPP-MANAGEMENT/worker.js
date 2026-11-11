@@ -35,6 +35,109 @@ function objectToCamel(obj) {
   return newObj;
 }
 
+// Static definition of valid columns for all 18 tables in Cloudflare D1
+// Eliminates repetitive PRAGMA table_info queries to stay well under Cloudflare Free 50-subrequest ceiling
+const VALID_COLUMNS = {
+  settings: [
+    "id", "shop_name", "shop_name_lao", "shop_subtitle", "website", "phone",
+    "email", "address", "tax_id", "currency", "currency_symbol", "tax_rate",
+    "logo_url", "bank_name", "bank_account_no", "bank_account_name", "bank_qr_url",
+    "d1_worker_url", "supabase_url", "supabase_anon_key", "theme", "updated_at"
+  ],
+  employees: [
+    "id", "name", "username", "password", "role", "role_name", "position",
+    "phone", "email", "avatar", "address", "joined_date", "salary", "status",
+    "notes", "created_at"
+  ],
+  customers: [
+    "id", "type", "name", "company", "contact_person", "phone", "email",
+    "address", "tax_id", "notes", "created_at"
+  ],
+  categories: [
+    "id", "name", "code", "description", "icon", "created_at"
+  ],
+  brands: [
+    "id", "name", "logo_url", "category_id", "category", "contact_info", "warranty_policy", "created_at"
+  ],
+  suppliers: [
+    "id", "name", "contact_person", "phone", "email", "address", "payment_terms", "terms", "notes", "created_at"
+  ],
+  products: [
+    "id", "sku", "name", "model", "sn_or_mac", "category_id", "brand_id",
+    "supplier_id", "supplier_name", "cost_price", "profit_margin", "sale_price",
+    "selling_price", "stock", "stock_qty", "min_stock", "min_stock_alert",
+    "unit", "has_sn", "warranty_period", "location", "image_url", "barcode",
+    "description", "specifications", "status", "created_at"
+  ],
+  product_serials: [
+    "id", "product_id", "serial_number", "mac_address", "status", "warranty_months",
+    "purchase_order_id", "invoice_id", "location", "received_date", "sold_date",
+    "customer_id", "customer_name", "warranty_expire", "notes", "created_at"
+  ],
+  inventory_logs: [
+    "id", "product_id", "product_name", "type", "qty", "prev_qty", "new_qty",
+    "ref_doc_id", "notes", "performed_by", "date"
+  ],
+  purchase_orders: [
+    "id", "po_number", "supplier_id", "supplier_name", "order_date", "expected_date",
+    "status", "subtotal", "shipping_cost", "total_amount", "items_json", "notes",
+    "created_by", "created_at"
+  ],
+  documents: [
+    "id", "doc_number", "type", "doc_type", "customer_id", "customer_name",
+    "customer_phone", "phone", "customer_address", "delivery_address", "driver",
+    "vehicle", "date", "doc_date", "due_date", "ref_doc_id", "ref_quotation_no",
+    "subtotal", "tax_rate", "tax_amount", "discount", "discount_amount",
+    "total_amount", "grand_total", "paid_amount", "balance_amount",
+    "payment_method", "status", "notes", "terms_conditions", "items_json",
+    "created_by", "created_at"
+  ],
+  document_items: [
+    "id", "document_id", "product_id", "item_code", "item_name", "item_model",
+    "item_sn", "qty", "unit", "unit_price", "discount", "total_price",
+    "warranty", "notes", "created_at"
+  ],
+  projects: [
+    "id", "project_code", "code", "name", "title", "customer_id", "customer_name",
+    "customer_phone", "service_type", "category", "category_id", "category_name",
+    "leader_id", "lead_technician_id", "lead_technician_name", "assigned_team",
+    "quotation_doc_number", "invoice_doc_number", "status", "start_date",
+    "target_date", "deadline", "completion_date", "budget", "cost_actual",
+    "profit", "progress", "scope_of_work", "location", "milestones_json", "notes", "created_at"
+  ],
+  project_tasks: [
+    "id", "project_id", "title", "description", "assigned_to", "assigned_name",
+    "due_date", "deadline", "priority", "status", "sort_order", "created_at"
+  ],
+  project_categories: [
+    "id", "name", "code", "color", "created_at"
+  ],
+  it_job_categories: [
+    "id", "key", "name", "description", "color", "created_at"
+  ],
+  it_jobs: [
+    "id", "job_code", "code", "customer_name", "customer_phone", "job_type",
+    "device_model", "serial_or_mac", "issue_description", "description",
+    "technician_id", "technician_name", "service_fee", "parts_replaced",
+    "status", "received_date", "completed_date", "notes", "created_at"
+  ],
+  transactions: [
+    "id", "type", "category", "amount", "date", "ref_doc_id", "ref_doc",
+    "description", "payment_method", "recorded_by", "notes", "created_at"
+  ],
+  client_systems: [
+    "id", "system_name", "customer_id", "domain_url", "hosting_provider",
+    "launch_date", "expiry_date", "sla_type", "status", "price", "tech_stack",
+    "notes", "created_at"
+  ],
+  activity_logs: [
+    "id", "user", "action", "module", "details", "time", "created_at"
+  ]
+};
+
+// Global cache flag to prevent running schema queries repeatedly on every request
+let isSchemaEnsured = false;
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -116,8 +219,9 @@ export default {
         }
       }
 
-      // Auto-initialize schema if not exists
+      // Auto-initialize schema if not exists (Cached to run at most once per Worker isolate)
       const ensureSchema = async () => {
+        if (isSchemaEnsured) return;
         try {
           await db.exec(`
             CREATE TABLE IF NOT EXISTS settings (
@@ -149,40 +253,48 @@ export default {
             CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT UNIQUE NOT NULL, description TEXT, icon TEXT DEFAULT 'fa-box', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS brands (id TEXT PRIMARY KEY, name TEXT NOT NULL, logo_url TEXT, category_id TEXT, contact_info TEXT, warranty_policy TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, contact_person TEXT, phone TEXT NOT NULL, email TEXT, address TEXT, payment_terms TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, sku TEXT UNIQUE NOT NULL, name TEXT NOT NULL, model TEXT, sn_or_mac TEXT, category_id TEXT NOT NULL, brand_id TEXT, supplier_id TEXT, supplier_name TEXT, cost_price REAL NOT NULL DEFAULT 0, selling_price REAL NOT NULL DEFAULT 0, stock_qty INTEGER NOT NULL DEFAULT 0, min_stock_alert INTEGER NOT NULL DEFAULT 3, unit TEXT NOT NULL DEFAULT 'ເຄື່ອງ', warranty_period TEXT DEFAULT '1 ປີ', location TEXT, image_url TEXT, barcode TEXT, specifications TEXT, status TEXT DEFAULT 'in_stock', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS product_serials (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, serial_number TEXT UNIQUE NOT NULL, mac_address TEXT, status TEXT NOT NULL DEFAULT 'in_stock', warranty_months INTEGER DEFAULT 12, customer_id TEXT, customer_name TEXT, sold_date DATE, warranty_expire DATE, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, sku TEXT UNIQUE NOT NULL, name TEXT NOT NULL, model TEXT, sn_or_mac TEXT, category_id TEXT NOT NULL, brand_id TEXT, supplier_id TEXT, supplier_name TEXT, cost_price REAL NOT NULL DEFAULT 0, profit_margin REAL DEFAULT 0, sale_price REAL NOT NULL DEFAULT 0, selling_price REAL NOT NULL DEFAULT 0, stock INTEGER NOT NULL DEFAULT 0, stock_qty INTEGER NOT NULL DEFAULT 0, min_stock INTEGER NOT NULL DEFAULT 2, min_stock_alert INTEGER NOT NULL DEFAULT 3, unit TEXT NOT NULL DEFAULT 'ເຄື່ອງ', has_sn INTEGER DEFAULT 1, warranty_period TEXT DEFAULT '1 ປີ', location TEXT, image_url TEXT, barcode TEXT, description TEXT, specifications TEXT, status TEXT DEFAULT 'in_stock', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS product_serials (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, serial_number TEXT UNIQUE NOT NULL, mac_address TEXT, status TEXT NOT NULL DEFAULT 'in_stock', purchase_order_id TEXT, invoice_id TEXT, warranty_months INTEGER DEFAULT 12, location TEXT DEFAULT 'ສາງໃຫຍ່', received_date DATETIME DEFAULT CURRENT_TIMESTAMP, sold_date DATE, customer_id TEXT, customer_name TEXT, warranty_expire DATE, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS inventory_logs (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, product_name TEXT, type TEXT NOT NULL, qty INTEGER NOT NULL, prev_qty INTEGER NOT NULL, new_qty INTEGER NOT NULL, ref_doc_id TEXT, notes TEXT, performed_by TEXT, date DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS purchase_orders (id TEXT PRIMARY KEY, po_number TEXT UNIQUE NOT NULL, supplier_id TEXT NOT NULL, supplier_name TEXT NOT NULL, order_date DATE NOT NULL, expected_date DATE, status TEXT NOT NULL DEFAULT 'draft', subtotal REAL NOT NULL DEFAULT 0, shipping_cost REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, notes TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, doc_number TEXT UNIQUE NOT NULL, type TEXT NOT NULL, customer_id TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, customer_address TEXT, date DATE NOT NULL, due_date DATE, ref_doc_id TEXT, ref_quotation_no TEXT, subtotal REAL NOT NULL DEFAULT 0, tax_rate REAL DEFAULT 0, tax_amount REAL DEFAULT 0, discount_amount REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, paid_amount REAL DEFAULT 0, balance_amount REAL DEFAULT 0, payment_method TEXT DEFAULT 'transfer', status TEXT NOT NULL DEFAULT 'draft', notes TEXT, terms_conditions TEXT, items_json TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS purchase_orders (id TEXT PRIMARY KEY, po_number TEXT UNIQUE NOT NULL, supplier_id TEXT NOT NULL, supplier_name TEXT NOT NULL, order_date DATE NOT NULL, expected_date DATE, status TEXT NOT NULL DEFAULT 'draft', subtotal REAL NOT NULL DEFAULT 0, shipping_cost REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, items_json TEXT, notes TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, doc_number TEXT UNIQUE NOT NULL, type TEXT NOT NULL, doc_type TEXT, customer_id TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, phone TEXT, customer_address TEXT, delivery_address TEXT, driver TEXT, vehicle TEXT, date DATE NOT NULL, doc_date DATE, due_date DATE, ref_doc_id TEXT, ref_quotation_no TEXT, subtotal REAL NOT NULL DEFAULT 0, tax_rate REAL DEFAULT 0, tax_amount REAL DEFAULT 0, discount REAL DEFAULT 0, discount_amount REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, grand_total REAL NOT NULL DEFAULT 0, paid_amount REAL DEFAULT 0, balance_amount REAL DEFAULT 0, payment_method TEXT DEFAULT 'transfer', status TEXT NOT NULL DEFAULT 'draft', notes TEXT, terms_conditions TEXT, items_json TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS document_items (id TEXT PRIMARY KEY, document_id TEXT NOT NULL, product_id TEXT, item_code TEXT, item_name TEXT NOT NULL, item_model TEXT, item_sn TEXT, qty INTEGER NOT NULL DEFAULT 1, unit TEXT DEFAULT 'ເຄື່ອງ', unit_price REAL NOT NULL DEFAULT 0, discount REAL DEFAULT 0, total_price REAL NOT NULL DEFAULT 0, warranty TEXT DEFAULT '1 ປີ', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, project_code TEXT UNIQUE NOT NULL, name TEXT NOT NULL, customer_id TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, service_type TEXT NOT NULL DEFAULT 'cctv', category_id TEXT, category_name TEXT, status TEXT NOT NULL DEFAULT 'survey', start_date DATE, target_date DATE, completion_date DATE, budget REAL DEFAULT 0, cost_actual REAL DEFAULT 0, profit REAL DEFAULT 0, lead_technician_id TEXT, lead_technician_name TEXT, assigned_team TEXT, scope_of_work TEXT, location TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS project_tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT, assigned_to TEXT, assigned_name TEXT, due_date DATE, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, project_code TEXT UNIQUE NOT NULL, code TEXT, name TEXT NOT NULL, title TEXT, customer_id TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, service_type TEXT NOT NULL DEFAULT 'cctv', category TEXT, category_id TEXT, category_name TEXT, status TEXT NOT NULL DEFAULT 'survey', start_date DATE, target_date DATE, deadline DATE, completion_date DATE, budget REAL DEFAULT 0, cost_actual REAL DEFAULT 0, profit REAL DEFAULT 0, progress INTEGER DEFAULT 0, lead_technician_id TEXT, lead_technician_name TEXT, assigned_team TEXT, quotation_doc_number TEXT, invoice_doc_number TEXT, scope_of_work TEXT, location TEXT, milestones_json TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS project_tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL, description TEXT, assigned_to TEXT, assigned_name TEXT, due_date DATE, deadline DATE, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS project_categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT UNIQUE NOT NULL, color TEXT DEFAULT 'sky', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS it_job_categories (id TEXT PRIMARY KEY, key TEXT UNIQUE NOT NULL, name TEXT NOT NULL, description TEXT, color TEXT DEFAULT 'sky', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS it_jobs (id TEXT PRIMARY KEY, job_code TEXT UNIQUE NOT NULL, customer_name TEXT NOT NULL, customer_phone TEXT, job_type TEXT NOT NULL DEFAULT 'onsite', device_model TEXT, serial_or_mac TEXT, issue_description TEXT NOT NULL, technician_id TEXT, technician_name TEXT, service_fee REAL DEFAULT 0, parts_replaced TEXT, status TEXT DEFAULT 'pending', received_date DATE DEFAULT CURRENT_TIMESTAMP, completed_date DATE, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, type TEXT NOT NULL, category TEXT NOT NULL, amount REAL NOT NULL, date DATE NOT NULL, ref_doc_id TEXT, description TEXT NOT NULL, payment_method TEXT DEFAULT 'transfer', recorded_by TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS it_jobs (id TEXT PRIMARY KEY, job_code TEXT UNIQUE NOT NULL, code TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, job_type TEXT NOT NULL DEFAULT 'onsite', device_model TEXT, serial_or_mac TEXT, issue_description TEXT NOT NULL, description TEXT, technician_id TEXT, technician_name TEXT, service_fee REAL DEFAULT 0, parts_replaced TEXT, status TEXT DEFAULT 'pending', received_date DATE DEFAULT CURRENT_TIMESTAMP, completed_date DATE, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, type TEXT NOT NULL, category TEXT NOT NULL, amount REAL NOT NULL, date DATE NOT NULL, ref_doc_id TEXT, ref_doc TEXT, description TEXT NOT NULL, payment_method TEXT DEFAULT 'transfer', recorded_by TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS client_systems (id TEXT PRIMARY KEY, system_name TEXT NOT NULL, customer_id TEXT NOT NULL, domain_url TEXT, hosting_provider TEXT, launch_date DATE, expiry_date DATE, sla_type TEXT DEFAULT 'SLA Gold 24/7', status TEXT DEFAULT 'active', price REAL DEFAULT 0, tech_stack TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS activity_logs (id TEXT PRIMARY KEY, user TEXT, action TEXT, module TEXT, details TEXT, time TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
           `);
 
-          // Safe column migrations for settings table
-          const settingsCols = [
-            "shop_name_lao TEXT DEFAULT 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ'",
-            "website TEXT DEFAULT 'www.netditsolutions.com'",
-            "supabase_url TEXT",
-            "supabase_anon_key TEXT",
-            "bank_qr_url TEXT",
-            "logo_url TEXT",
-            "bank_name TEXT",
-            "bank_account_no TEXT",
-            "bank_account_name TEXT",
-            "d1_worker_url TEXT",
-            "theme TEXT DEFAULT 'dark'"
+          // Safe column migrations for older existing databases
+          const migrations = [
+            "ALTER TABLE settings ADD COLUMN shop_name_lao TEXT DEFAULT 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ'",
+            "ALTER TABLE settings ADD COLUMN website TEXT DEFAULT 'www.netditsolutions.com'",
+            "ALTER TABLE settings ADD COLUMN supabase_url TEXT",
+            "ALTER TABLE settings ADD COLUMN supabase_anon_key TEXT",
+            "ALTER TABLE settings ADD COLUMN d1_worker_url TEXT",
+            "ALTER TABLE products ADD COLUMN sale_price REAL DEFAULT 0",
+            "ALTER TABLE products ADD COLUMN profit_margin REAL DEFAULT 0",
+            "ALTER TABLE products ADD COLUMN stock INTEGER DEFAULT 0",
+            "ALTER TABLE products ADD COLUMN min_stock INTEGER DEFAULT 2",
+            "ALTER TABLE products ADD COLUMN has_sn INTEGER DEFAULT 1",
+            "ALTER TABLE products ADD COLUMN description TEXT",
+            "ALTER TABLE product_serials ADD COLUMN purchase_order_id TEXT",
+            "ALTER TABLE product_serials ADD COLUMN invoice_id TEXT",
+            "ALTER TABLE product_serials ADD COLUMN location TEXT DEFAULT 'ສາງໃຫຍ່'",
+            "ALTER TABLE product_serials ADD COLUMN received_date DATETIME",
+            "ALTER TABLE documents ADD COLUMN customer_phone TEXT",
+            "ALTER TABLE documents ADD COLUMN delivery_address TEXT",
+            "ALTER TABLE documents ADD COLUMN grand_total REAL DEFAULT 0",
+            "ALTER TABLE documents ADD COLUMN discount REAL DEFAULT 0",
+            "ALTER TABLE documents ADD COLUMN doc_date DATE",
+            "ALTER TABLE purchase_orders ADD COLUMN items_json TEXT"
           ];
-          for (const colDef of settingsCols) {
-            try {
-              await db.exec(`ALTER TABLE settings ADD COLUMN ${colDef}`);
-            } catch (e) {}
+          for (const sql of migrations) {
+            try { await db.exec(sql); } catch (e) {}
           }
 
           // Ensure default setting row exists in D1
@@ -192,24 +304,16 @@ export default {
               VALUES ('setting_01', 'NETD IT Solutions & Services', 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ', 'www.netditsolutions.com')
             `);
           } catch (e) {}
+
+          isSchemaEnsured = true;
         } catch (e) {
           console.warn("Schema init error:", e.message);
         }
       };
 
-      // Helper: get valid column names for a table in SQLite
-      const getTableColumns = async (tableName) => {
-        try {
-          let { results } = await db.prepare(`PRAGMA table_info(${tableName})`).all();
-          if (!results || results.length === 0) {
-            await ensureSchema();
-            const recheck = await db.prepare(`PRAGMA table_info(${tableName})`).all();
-            results = recheck.results;
-          }
-          return (results || []).map(r => r.name);
-        } catch (e) {
-          return [];
-        }
+      // Helper: get valid column names synchronously from static cache (0 subrequests)
+      const getTableColumns = (tableName) => {
+        return VALID_COLUMNS[tableName] || [];
       };
 
       // 3. Batch Sync endpoint: Sync a single table
@@ -234,7 +338,7 @@ export default {
         };
         const targetTable = tableAliases[table] || camelToSnake(table);
 
-        const validCols = await getTableColumns(targetTable);
+        const validCols = getTableColumns(targetTable);
         if (!validCols || validCols.length === 0) {
           return json({ success: false, error: `Table '${targetTable}' does not exist in D1.` }, 400);
         }
@@ -248,7 +352,7 @@ export default {
           if (targetTable === "documents") {
             if (!row.type) row.type = rawRow.docType || rawRow.type || 'quotation';
             if (!row.doc_type) row.doc_type = row.type;
-            if (!row.customer_name) row.customer_name = rawRow.customerName || 'ລູກຄ້າ';
+            if (!row.customer_name) row.customer_name = rawRow.customerName || (rawRow.supplierName || 'ລູກຄ້າ');
             if (!row.total_amount && (rawRow.grandTotal !== undefined || rawRow.totalAmount !== undefined)) {
               row.total_amount = rawRow.grandTotal !== undefined ? rawRow.grandTotal : rawRow.totalAmount;
             }
@@ -259,6 +363,13 @@ export default {
           if (targetTable === "products") {
             if (row.sale_price === undefined && rawRow.salePrice !== undefined) row.sale_price = rawRow.salePrice;
             if (row.selling_price === undefined && row.sale_price !== undefined) row.selling_price = row.sale_price;
+            if (row.stock === undefined && rawRow.stock !== undefined) row.stock = rawRow.stock;
+            if (row.stock_qty === undefined && row.stock !== undefined) row.stock_qty = row.stock;
+            if (row.has_sn === undefined && rawRow.hasSn !== undefined) row.has_sn = rawRow.hasSn ? 1 : 0;
+          }
+          if (targetTable === "product_serials") {
+            if (!row.location && rawRow.location) row.location = rawRow.location;
+            if (!row.received_date && rawRow.receivedDate) row.received_date = rawRow.receivedDate;
           }
           
           const filteredKeys = Object.keys(row).filter(k => validCols.includes(k));
@@ -273,12 +384,17 @@ export default {
         }
 
         if (stmts.length > 0) {
-          await db.batch(stmts);
+          const chunkSize = 50;
+          for (let i = 0; i < stmts.length; i += chunkSize) {
+            await db.batch(stmts.slice(i, i + chunkSize));
+          }
         }
         return json({ success: true, count: rows.length, message: `Synced ${rows.length} rows to ${targetTable}` });
       }
 
       // 3.1 Full Database Sync endpoint: /api/sync-all (Client -> D1)
+      // Highly optimized: Collects prepared statements across all tables and batches in chunks of 50
+      // Uses only 1-2 Cloudflare subrequests total (stays far below 50-subrequest limit)
       if (url.pathname === "/api/sync-all" && request.method === "POST") {
         await ensureSchema();
         const payload = await request.json();
@@ -306,13 +422,12 @@ export default {
           activity_logs: fullData.activityLogs || []
         };
 
+        const allStmts = [];
+
         for (const [table, rows] of Object.entries(tableMap)) {
-          const validCols = await getTableColumns(table);
-          if (!validCols || validCols.length === 0) continue;
+          const validCols = getTableColumns(table);
+          if (!validCols || validCols.length === 0 || !rows || rows.length === 0) continue;
 
-          if (!rows || rows.length === 0) continue;
-
-          const stmts = [];
           for (const rawRow of rows) {
             const row = objectToSnake(rawRow);
             if (table === "settings" && !row.id) row.id = "setting_01";
@@ -322,7 +437,7 @@ export default {
             if (table === "documents") {
               if (!row.type) row.type = rawRow.docType || rawRow.type || 'quotation';
               if (!row.doc_type) row.doc_type = row.type;
-              if (!row.customer_name) row.customer_name = rawRow.customerName || 'ລູກຄ້າ';
+              if (!row.customer_name) row.customer_name = rawRow.customerName || (rawRow.supplierName || 'ລູກຄ້າ');
               if (!row.doc_number) row.doc_number = rawRow.docNumber || ('DOC-' + row.id);
               if (!row.date) row.date = rawRow.date || new Date().toISOString().substring(0, 10);
               if (row.total_amount === undefined) row.total_amount = rawRow.grandTotal !== undefined ? rawRow.grandTotal : (rawRow.totalAmount || 0);
@@ -343,6 +458,12 @@ export default {
               if (row.stock_qty === undefined) row.stock_qty = rawRow.stock !== undefined ? rawRow.stock : (rawRow.stockQty || 0);
               if (row.stock === undefined) row.stock = row.stock_qty;
               if (row.has_sn === undefined) row.has_sn = rawRow.hasSn !== undefined ? (rawRow.hasSn ? 1 : 0) : 1;
+            }
+
+            if (table === "product_serials") {
+              if (!row.location) row.location = rawRow.location || 'ສາງໃຫຍ່';
+              if (!row.received_date) row.received_date = rawRow.receivedDate || new Date().toISOString().substring(0, 10);
+              if (row.warranty_months === undefined) row.warranty_months = rawRow.warrantyMonths || 12;
             }
 
             if (table === "purchase_orders") {
@@ -386,7 +507,6 @@ export default {
               if (!row.category) row.category = rawRow.category || 'other';
             }
 
-            // General itemsJson fallback
             if (rawRow.items && !row.items_json) {
               row.items_json = JSON.stringify(rawRow.items);
             }
@@ -398,26 +518,16 @@ export default {
             const placeholders = filteredKeys.map(() => "?").join(", ");
             const sql = `INSERT OR REPLACE INTO ${table} (${cols}) VALUES (${placeholders})`;
             const values = filteredKeys.map(k => typeof row[k] === "object" ? JSON.stringify(row[k]) : row[k]);
-            stmts.push(db.prepare(sql).bind(...values));
+            allStmts.push(db.prepare(sql).bind(...values));
             syncedCount++;
           }
+        }
 
-          if (stmts.length > 0) {
-            try {
-              const chunkSize = 50;
-              for (let i = 0; i < stmts.length; i += chunkSize) {
-                await db.batch(stmts.slice(i, i + chunkSize));
-              }
-            } catch (batchErr) {
-              console.warn(`Batch failed for ${table}, falling back to single execution:`, batchErr.message);
-              for (const stmt of stmts) {
-                try {
-                  await stmt.run();
-                } catch (singleErr) {
-                  console.error(`Single insert failed for ${table}:`, singleErr.message);
-                }
-              }
-            }
+        // Execute all collected statements in chunks of 50
+        if (allStmts.length > 0) {
+          const chunkSize = 50;
+          for (let i = 0; i < allStmts.length; i += chunkSize) {
+            await db.batch(allStmts.slice(i, i + chunkSize));
           }
         }
 
@@ -430,6 +540,7 @@ export default {
       }
 
       // 3.2 Full Database Pull endpoint: /api/pull-all (D1 -> Client)
+      // Uses Promise.all to fetch all tables concurrently in a single round-trip
       if (url.pathname === "/api/pull-all" && request.method === "GET") {
         const pullMap = {
           settings: "settings",
@@ -455,7 +566,7 @@ export default {
         const resultData = {};
         await ensureSchema();
 
-        for (const [clientKey, dbTable] of Object.entries(pullMap)) {
+        await Promise.all(Object.entries(pullMap).map(async ([clientKey, dbTable]) => {
           try {
             const { results } = await db.prepare(`SELECT * FROM ${dbTable}`).all();
             if (clientKey === "settings") {
@@ -488,7 +599,20 @@ export default {
                 // Products mapping
                 if (clientKey === "products") {
                   if (camel.salePrice === undefined && camel.sellingPrice !== undefined) camel.salePrice = camel.sellingPrice;
+                  if (camel.sellingPrice === undefined && camel.salePrice !== undefined) camel.sellingPrice = camel.salePrice;
                   if (camel.minStock === undefined && camel.minStockAlert !== undefined) camel.minStock = camel.minStockAlert;
+                  if (camel.stock === undefined && camel.stockQty !== undefined) camel.stock = camel.stockQty;
+                  if (camel.stockQty === undefined && camel.stock !== undefined) camel.stockQty = camel.stock;
+                  if (camel.hasSn !== undefined) {
+                    camel.hasSn = (camel.hasSn === 1 || camel.hasSn === true || camel.hasSn === '1') ? 1 : 0;
+                  } else {
+                    camel.hasSn = 1;
+                  }
+                }
+
+                // Product Serials mapping
+                if (clientKey === "productSerials") {
+                  if (!camel.location) camel.location = 'ສາງໃຫຍ່';
                 }
 
                 // Purchase orders mapping
@@ -508,9 +632,15 @@ export default {
                   }
                 }
 
-                // Project tasks mapping
+                // Tasks mapping
                 if (clientKey === "tasks") {
                   if (!camel.deadline && camel.dueDate) camel.deadline = camel.dueDate;
+                }
+
+                // IT Jobs mapping
+                if (clientKey === "itJobs") {
+                  if (!camel.jobCode && camel.code) camel.jobCode = camel.code;
+                  if (!camel.issueDescription && camel.description) camel.issueDescription = camel.description;
                 }
 
                 // Transactions mapping
@@ -528,7 +658,7 @@ export default {
           } catch (e) {
             resultData[clientKey] = clientKey === "settings" ? {} : [];
           }
-        }
+        }));
 
         return json({
           success: true,

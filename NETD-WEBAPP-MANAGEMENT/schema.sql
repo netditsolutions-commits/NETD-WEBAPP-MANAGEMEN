@@ -104,8 +104,11 @@ CREATE TABLE IF NOT EXISTS products (
     cost_price REAL NOT NULL DEFAULT 0,
     profit_margin REAL DEFAULT 0,
     sale_price REAL NOT NULL DEFAULT 0,
+    selling_price REAL NOT NULL DEFAULT 0,
     min_stock INTEGER DEFAULT 2,
+    min_stock_alert INTEGER DEFAULT 2,
     stock INTEGER DEFAULT 0,
+    stock_qty INTEGER DEFAULT 0,
     unit TEXT DEFAULT 'ໜ່ວຍ',
     has_sn INTEGER DEFAULT 1,
     image_url TEXT,
@@ -125,7 +128,10 @@ CREATE TABLE IF NOT EXISTS product_serials (
     location TEXT DEFAULT 'ສາງໃຫຍ່',
     received_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     sold_date DATETIME,
-    notes TEXT
+    customer_id TEXT,
+    customer_name TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS purchase_orders (
