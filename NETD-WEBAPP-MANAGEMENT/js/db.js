@@ -1103,11 +1103,15 @@ class DatabaseManager {
     if (workerUrl) {
       const dbTable = SUPABASE_TABLES[table] || table;
       try {
-        await fetch(`${workerUrl.replace(/\/+$/, '')}/api/sync`, {
+        const syncRes = await fetch(`${workerUrl.replace(/\/+$/, '')}/api/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ table: dbTable, rows: [record] })
         });
+        if (!syncRes.ok) {
+          const errData = await syncRes.json().catch(() => ({}));
+          console.warn(`Cloudflare D1 sync failed for ${dbTable} (HTTP ${syncRes.status}):`, errData.error || syncRes.statusText);
+        }
       } catch (e) {
         console.warn(`Cloudflare D1 sync error for ${dbTable}:`, e);
       }
@@ -2709,12 +2713,15 @@ class DatabaseManager {
     };
     if (!this.data.settings.id) this.data.settings.id = 'setting_01';
 
-    // Persist Supabase settings locally
+    // Persist Supabase & Worker settings locally
     if (newSettings.supabaseUrl !== undefined && typeof localStorage !== 'undefined') {
       localStorage.setItem('netd_supabase_url', newSettings.supabaseUrl || '');
     }
     if (newSettings.supabaseAnonKey !== undefined && typeof localStorage !== 'undefined') {
       localStorage.setItem('netd_supabase_key', newSettings.supabaseAnonKey || '');
+    }
+    if (newSettings.d1WorkerUrl !== undefined && typeof localStorage !== 'undefined') {
+      localStorage.setItem('netd_worker_url', newSettings.d1WorkerUrl || '');
     }
 
     this.saveLocal();
@@ -2852,12 +2859,21 @@ class DatabaseManager {
         const curWorkerUrl = this.data.settings && this.data.settings.d1WorkerUrl;
         const curSbUrl = this.data.settings && this.data.settings.supabaseUrl;
         const curSbKey = this.data.settings && this.data.settings.supabaseAnonKey;
+
+        // Clean remote settings: do not overwrite local populated values with null, undefined, or empty strings
+        const cleanRemote = {};
+        for (const [k, v] of Object.entries(pData.settings)) {
+          if (v !== null && v !== undefined && v !== '') {
+            cleanRemote[k] = v;
+          }
+        }
+
         this.data.settings = { 
           ...this.data.settings, 
-          ...pData.settings,
-          d1WorkerUrl: pData.settings.d1WorkerUrl || curWorkerUrl || '',
-          supabaseUrl: pData.settings.supabaseUrl || curSbUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || '',
-          supabaseAnonKey: pData.settings.supabaseAnonKey || curSbKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || ''
+          ...cleanRemote,
+          d1WorkerUrl: cleanRemote.d1WorkerUrl || curWorkerUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_worker_url') : '') || '',
+          supabaseUrl: cleanRemote.supabaseUrl || curSbUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || '',
+          supabaseAnonKey: cleanRemote.supabaseAnonKey || curSbKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || ''
         };
       }
 

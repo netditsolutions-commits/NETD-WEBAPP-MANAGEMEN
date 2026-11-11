@@ -8613,6 +8613,10 @@ const App = {
   // --------------------------------------------------------------------------
   openAddBrandModal() {
     const defaultLogo = 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=200';
+    const categories = window.db.getCategories();
+    const catOptions = (categories && categories.length > 0)
+      ? categories.map(c => `<option value="${c.name}">${c.name}</option>`).join('')
+      : `<option value="ທົ່ວໄປ">ທົ່ວໄປ</option>`;
 
     Swal.fire({
       title: 'ເພີ່ມສິນຄ້າ / ແບຣນສິນຄ້າໃໝ່',
@@ -8657,11 +8661,7 @@ const App = {
             <div>
               <label class="block mb-1 font-bold">ໝວດໝູ່ສິນຄ້າ</label>
               <select id="brand-cat" class="glass-input w-full">
-                <option value="Network & Wireless">Network & Wireless</option>
-                <option value="CCTV & Security">CCTV & Security</option>
-                <option value="Server & Storage">Server & Storage</option>
-                <option value="POS Systems">POS Systems</option>
-                <option value="Computer & Laptop">Computer & Laptop</option>
+                ${catOptions}
               </select>
             </div>
             <div>
@@ -8715,6 +8715,19 @@ const App = {
     const b = window.db.getBrands().find(br => br.id === brandId);
     if (!b) return;
     const currentLogo = b.logoUrl || 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=200';
+    const categories = window.db.getCategories();
+    let catFound = false;
+    let catOptions = (categories || []).map(c => {
+      const isSel = (c.name === b.category);
+      if (isSel) catFound = true;
+      return `<option value="${c.name}" ${isSel ? 'selected' : ''}>${c.name}</option>`;
+    }).join('');
+    if (b.category && !catFound) {
+      catOptions = `<option value="${b.category}" selected>${b.category}</option>` + catOptions;
+    }
+    if (!catOptions) {
+      catOptions = `<option value="ທົ່ວໄປ">ທົ່ວໄປ</option>`;
+    }
 
     Swal.fire({
       title: `ແກ້ໄຂ: ${b.name}`,
@@ -8757,8 +8770,10 @@ const App = {
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block mb-1 font-bold">ໝວດໝູ່</label>
-              <input type="text" id="edit-brand-cat" class="glass-input w-full" value="${b.category || ''}">
+              <label class="block mb-1 font-bold">ໝວດໝູ່ສິນຄ້າ</label>
+              <select id="edit-brand-cat" class="glass-input w-full">
+                ${catOptions}
+              </select>
             </div>
             <div>
               <label class="block mb-1 font-bold">ການຮັບປະກັນ</label>
@@ -9586,7 +9601,12 @@ const App = {
 
     try {
       await window.db.updateSettings(newCfg);
+      const syncResult = await window.db.syncWithCloudflareD1();
       this.updateLiveHeader();
+
+      if (syncResult && !syncResult.success) {
+        console.warn('D1 sync notice during settings save:', syncResult.error);
+      }
 
       Swal.fire({ 
         title: 'ບັນທຶກສຳເລັດ!', 
