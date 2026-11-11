@@ -1724,8 +1724,18 @@ class DatabaseManager {
   }
 
   deleteSerial(id) {
+    const serial = this.data.productSerials.find(s => s.id === id);
+    const prodId = serial ? serial.productId : null;
     this.data.productSerials = this.data.productSerials.filter(s => s.id !== id);
     this.deleteFromRemote('product_serials', id);
+    if (prodId) {
+      const prod = this.getProductById(prodId);
+      if (prod && prod.hasSn) {
+        prod.stock = this.data.productSerials.filter(s => s.productId === prod.id && s.status === 'in_stock').length;
+        prod.stockQty = prod.stock;
+        this.syncRecordToRemote('products', prod);
+      }
+    }
     this.notify();
   }
 
@@ -1749,7 +1759,19 @@ class DatabaseManager {
       };
       this.data.productSerials.push(serial);
       created.push(serial);
+      this.syncRecordToRemote('product_serials', serial);
     });
+
+    // Update product stock count and sync product
+    const prod = this.getProductById(productId);
+    if (prod) {
+      if (prod.hasSn) {
+        prod.stock = this.data.productSerials.filter(s => s.productId === prod.id && s.status === 'in_stock').length;
+        prod.stockQty = prod.stock;
+      }
+      this.syncRecordToRemote('products', prod);
+    }
+
     this.notify();
     return created;
   }
@@ -1760,6 +1782,15 @@ class DatabaseManager {
       serial.status = reason;
       serial.invoiceId = invoiceId;
       serial.soldDate = new Date().toISOString().split('T')[0];
+      this.syncRecordToRemote('product_serials', serial);
+      const prod = this.getProductById(serial.productId);
+      if (prod) {
+        if (prod.hasSn) {
+          prod.stock = this.data.productSerials.filter(s => s.productId === prod.id && s.status === 'in_stock').length;
+          prod.stockQty = prod.stock;
+        }
+        this.syncRecordToRemote('products', prod);
+      }
       this.notify();
       return true;
     }
@@ -2027,7 +2058,11 @@ class DatabaseManager {
     if (po) {
       po.status = 'received';
       const d = this.data.documents.find(doc => doc.id === poId || doc.docNumber === po.poNumber);
-      if (d) d.status = 'received';
+      if (d) {
+        d.status = 'received';
+        this.syncRecordToRemote('documents', d);
+      }
+      this.syncRecordToRemote('purchase_orders', po);
       this.notify();
       return true;
     }
@@ -2841,14 +2876,26 @@ class DatabaseManager {
               if (!item.docType && item.type) item.docType = item.type;
               if (item.grandTotal === undefined && item.totalAmount !== undefined) item.grandTotal = item.totalAmount;
               if (item.discount === undefined && item.discountAmount !== undefined) item.discount = item.discountAmount;
+              if (item.customerName === 'undefined') item.customerName = '';
               if (item.itemsJson && (!item.items || !item.items.length)) {
                 try { item.items = JSON.parse(item.itemsJson); } catch (e) {}
               }
             }
             if (tk === 'products') {
               if (item.salePrice === undefined && item.sellingPrice !== undefined) item.salePrice = item.sellingPrice;
+              if (item.sellingPrice === undefined && item.salePrice !== undefined) item.sellingPrice = item.salePrice;
               if (item.minStock === undefined && item.minStockAlert !== undefined) item.minStock = item.minStockAlert;
+              if (item.minStockAlert === undefined && item.minStock !== undefined) item.minStockAlert = item.minStock;
               if (item.stock === undefined && item.stockQty !== undefined) item.stock = item.stockQty;
+              if (item.stockQty === undefined && item.stock !== undefined) item.stockQty = item.stock;
+              if (item.hasSn !== undefined) {
+                item.hasSn = (item.hasSn === 1 || item.hasSn === true || item.hasSn === '1') ? 1 : 0;
+              } else {
+                item.hasSn = 1;
+              }
+              if (item.profitMargin === undefined && item.costPrice > 0 && item.salePrice > 0) {
+                item.profitMargin = parseFloat((((item.salePrice - item.costPrice) / item.costPrice) * 100).toFixed(2));
+              }
             }
             if (tk === 'itJobs') {
               if (!item.jobCode && item.code) item.jobCode = item.code;
@@ -2877,6 +2924,17 @@ class DatabaseManager {
           }).filter(item => item && !deletedSet.has(item.id) && !deletedSet.has(item.docNumber) && !deletedSet.has(item.poNumber));
         }
       });
+
+      // Recalculate stock count for SN products from pulled productSerials
+      if (this.data.products && Array.isArray(this.data.products) && this.data.productSerials && Array.isArray(this.data.productSerials)) {
+        this.data.products.forEach(p => {
+          if (p.hasSn) {
+            const count = this.data.productSerials.filter(s => s.productId === p.id && s.status === 'in_stock').length;
+            p.stock = count;
+            p.stockQty = count;
+          }
+        });
+      }
 
       this.data.settings.lastSyncTime = new Date().toISOString();
       this.saveLocal();

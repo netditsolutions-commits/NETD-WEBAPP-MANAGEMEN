@@ -1800,9 +1800,15 @@ const App = {
              class="glass-panel glass-panel-hover p-4 cursor-pointer relative border ${isSelected ? 'border-sky-400 bg-sky-500/20' : 'border-white/10'}">
           <div class="flex items-center justify-between mb-2">
             <h4 class="text-sm font-bold line-clamp-1">${cat.name}</h4>
-            <span class="badge-glass-cyan text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
-              ${stats.skuCount} SKU
-            </span>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span class="badge-glass-cyan text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
+                ${stats.skuCount} SKU
+              </span>
+              ${this.canManage('products') ? `
+                <button onclick="event.stopPropagation(); App.openEditCategoryPrompt('${cat.id}')" class="p-1 text-sky-400 hover:text-sky-300 transition" title="ແກ້ໄຂໝວດສິນຄ້າ"><i class="fa-solid fa-pen text-xs"></i></button>
+                <button onclick="event.stopPropagation(); App.confirmDeleteCategory('${cat.id}')" class="p-1 text-rose-400 hover:text-rose-300 transition" title="ລຶບໝວດສິນຄ້າ"><i class="fa-solid fa-trash text-xs"></i></button>
+              ` : ''}
+            </div>
           </div>
           <div class="text-xs opacity-80 mb-1">
             ຈຳນວນໃນສະຕອກ: <strong class="text-emerald-400 text-sm">${stats.stockQty}</strong>
@@ -2489,38 +2495,74 @@ const App = {
     });
   },
 
-  // CATEGORY MODALS WITH EDIT
+  // CATEGORY MODALS WITH FULL ADD, EDIT, AND DELETE MANAGEMENT
   openCategoryModal() {
     const cats = window.db.getCategories();
+    const products = window.db.getProducts();
+
     Swal.fire({
       title: 'ຈັດການໝວດສິນຄ້າ (Categories)',
       html: `
-        <div class="space-y-3 text-left text-xs">
-          <div class="flex gap-2">
-            <input type="text" id="new-cat-code" class="glass-input w-24 font-mono uppercase" placeholder="Code (CCTV)">
-            <input type="text" id="new-cat-name" class="glass-input flex-1" placeholder="ຊື່ໝວດສິນຄ້າໃໝ່">
-            <button onclick="App.quickAddCategory()" class="btn-glass-primary py-1 px-3">
-              <i class="fa-solid fa-plus"></i> ເພີ່ມ
-            </button>
+        <div class="space-y-4 text-left text-xs">
+          <!-- Add New Category Form -->
+          <div class="p-3 rounded-xl bg-white/5 border border-sky-500/30 space-y-2.5">
+            <div class="font-bold text-sky-400 flex items-center gap-1.5 text-xs">
+              <i class="fa-solid fa-plus-circle"></i> ເພີ່ມໝວດສິນຄ້າໃໝ່ (Add New Category)
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block mb-1 opacity-80 font-bold">ລະຫັດໝວດ (Code) *</label>
+                <input type="text" id="new-cat-code" class="glass-input w-full font-mono uppercase font-bold" placeholder="ເຊັ່ນ: CCTV, NET">
+              </div>
+              <div class="col-span-2">
+                <label class="block mb-1 opacity-80 font-bold">ຊື່ໝວດສິນຄ້າ *</label>
+                <input type="text" id="new-cat-name" class="glass-input w-full" placeholder="ເຊັ່ນ: ກ້ອງວົງຈອນປິດ (CCTV & Security)">
+              </div>
+            </div>
+            <div>
+              <label class="block mb-1 opacity-80">ຄຳອະທິບາຍ (Description)</label>
+              <input type="text" id="new-cat-desc" class="glass-input w-full" placeholder="ຄຳອະທິບາຍສິນຄ້າພາຍໃນໝວດ">
+            </div>
+            <div class="flex justify-end pt-1">
+              <button type="button" onclick="App.quickAddCategory()" class="btn-glass-primary py-1.5 px-4 text-xs font-bold flex items-center gap-1.5">
+                <i class="fa-solid fa-plus"></i> + ເພີ່ມໝວດສິນຄ້າ
+              </button>
+            </div>
           </div>
 
-          <div class="max-h-60 overflow-y-auto space-y-1.5 mt-3">
-            ${cats.map(c => `
-              <div class="flex justify-between items-center p-2 rounded-lg bg-white/5 border border-white/10">
-                <div>
-                  <span class="badge-glass-cyan text-[11px] font-mono px-1.5 py-0.5 rounded font-bold mr-1.5">${c.code}</span>
-                  <span class="font-bold">${c.name}</span>
-                </div>
-                <div class="flex items-center gap-1">
-                  <button onclick="App.openEditCategoryPrompt('${c.id}')" class="p-1 text-sky-400 hover:opacity-80" title="ແກ້ໄຂ"><i class="fa-solid fa-pen"></i></button>
-                  <button onclick="App.deleteCategory('${c.id}')" class="p-1 text-rose-400 hover:opacity-80" title="ລຶບ"><i class="fa-solid fa-trash"></i></button>
-                </div>
-              </div>
-            `).join('')}
+          <!-- Existing Categories List -->
+          <div>
+            <div class="font-bold mb-2 opacity-80 flex items-center justify-between">
+              <span>ລາຍການໝວດສິນຄ້າທັງໝົດ (${cats.length} ໝວດ):</span>
+              <span class="text-[10px] text-gray-400 font-normal">ຄລິກ ✏️ ເພື່ອແກ້ໄຂ, 🗑️ ເພື່ອລຶບ</span>
+            </div>
+            <div class="max-h-64 overflow-y-auto space-y-2 pr-1">
+              ${cats.map(c => {
+                const prodCount = products.filter(p => p.categoryId === c.id).length;
+                return `
+                  <div class="flex justify-between items-center p-2.5 rounded-xl bg-white/5 border border-white/10 hover:border-sky-500/40 transition">
+                    <div class="flex-1 mr-2">
+                      <div class="flex items-center gap-2 mb-0.5">
+                        <span class="badge-glass-cyan text-[11px] font-mono px-2 py-0.5 rounded font-bold">${c.code}</span>
+                        <span class="font-bold text-white text-xs">${c.name}</span>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full font-bold ${prodCount > 0 ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'bg-slate-700/40 text-slate-400'}">${prodCount} SKU</span>
+                      </div>
+                      ${c.description ? `<p class="text-[11px] opacity-70 line-clamp-1">${c.description}</p>` : ''}
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <button onclick="App.openEditCategoryPrompt('${c.id}')" class="p-1.5 rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 transition" title="ແກ້ໄຂໝວດສິນຄ້າ"><i class="fa-solid fa-pen text-xs"></i></button>
+                      <button onclick="App.confirmDeleteCategory('${c.id}')" class="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition" title="ລຶບໝວດສິນຄ້າ"><i class="fa-solid fa-trash text-xs"></i></button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
           </div>
         </div>
       `,
-      confirmButtonText: 'ປິດ',
+      width: '600px',
+      showConfirmButton: true,
+      confirmButtonText: 'ປິດໜ້າຕ່າງ',
       customClass: { popup: 'swal-glass' }
     });
   },
@@ -2528,14 +2570,31 @@ const App = {
   quickAddCategory() {
     const code = document.getElementById('new-cat-code')?.value?.trim();
     const name = document.getElementById('new-cat-name')?.value?.trim();
-    if (!name) return;
+    const description = document.getElementById('new-cat-desc')?.value?.trim() || '';
+    if (!name) {
+      Swal.showValidationMessage('ກະລຸນາໃສ່ຊື່ໝວດສິນຄ້າ');
+      return;
+    }
 
+    const cleanCode = (code || name.substring(0, 4)).toUpperCase();
     window.db.addCategory({
-      code: (code || name.substring(0, 4)).toUpperCase(),
-      name
+      code: cleanCode,
+      name,
+      description,
+      icon: 'fa-box'
     });
-    this.openCategoryModal();
-    this.renderCurrentView();
+
+    Swal.fire({
+      title: 'ເພີ່ມໝວດສິນຄ້າສຳເລັດ!',
+      text: `ໝວດ ${name} (${cleanCode}) ຖືກເພີ່ມແລ້ວ`,
+      icon: 'success',
+      timer: 1200,
+      showConfirmButton: false,
+      customClass: { popup: 'swal-glass' }
+    }).then(() => {
+      this.openCategoryModal();
+      this.renderCurrentView();
+    });
   },
 
   openEditCategoryPrompt(catId) {
@@ -2543,40 +2602,92 @@ const App = {
     if (!c) return;
 
     Swal.fire({
-      title: 'ແກ້ໄຂໝວດສິນຄ້າ',
+      title: `ແກ້ໄຂໝວດສິນຄ້າ: ${c.code}`,
       html: `
         <div class="space-y-3 text-left text-xs">
           <div>
-            <label class="block mb-1 font-bold">ລະຫັດໝວດ (Code)</label>
-            <input type="text" id="edit-cat-code" class="glass-input w-full font-mono uppercase" value="${c.code}">
+            <label class="block mb-1 font-bold">ລະຫັດໝວດ (Code) *</label>
+            <input type="text" id="edit-cat-code" class="glass-input w-full font-mono uppercase font-bold" value="${c.code || ''}">
           </div>
           <div>
-            <label class="block mb-1 font-bold">ຊື່ໝວດສິນຄ້າ</label>
-            <input type="text" id="edit-cat-name" class="glass-input w-full" value="${c.name}">
+            <label class="block mb-1 font-bold">ຊື່ໝວດສິນຄ້າ *</label>
+            <input type="text" id="edit-cat-name" class="glass-input w-full" value="${c.name || ''}">
+          </div>
+          <div>
+            <label class="block mb-1 opacity-80 font-bold">ຄຳອະທິບາຍ (Description)</label>
+            <textarea id="edit-cat-desc" rows="2" class="glass-input w-full text-xs">${c.description || ''}</textarea>
           </div>
         </div>
       `,
       showCancelButton: true,
-      confirmButtonText: 'ບັນທຶກ',
+      confirmButtonText: '💾 ບັນທຶກການແກ້ໄຂ',
       cancelButtonText: 'ຍົກເລີກ',
       customClass: { popup: 'swal-glass' },
-      preConfirm: () => ({
-        code: document.getElementById('edit-cat-code')?.value?.trim()?.toUpperCase(),
-        name: document.getElementById('edit-cat-name')?.value?.trim()
-      })
+      preConfirm: () => {
+        const code = document.getElementById('edit-cat-code')?.value?.trim()?.toUpperCase();
+        const name = document.getElementById('edit-cat-name')?.value?.trim();
+        const description = document.getElementById('edit-cat-desc')?.value?.trim() || '';
+        if (!name || !code) {
+          Swal.showValidationMessage('ກະລຸນາໃສ່ລະຫັດ ແລະ ຊື່ໝວດສິນຄ້າ');
+          return false;
+        }
+        return { code, name, description };
+      }
     }).then(res => {
       if (res.isConfirmed && res.value) {
         window.db.updateCategory(catId, res.value);
-        this.openCategoryModal();
-        this.renderCurrentView();
+        Swal.fire({
+          title: 'ບັນທຶກໝວດສິນຄ້າສຳເລັດ!',
+          icon: 'success',
+          timer: 1200,
+          showConfirmButton: false,
+          customClass: { popup: 'swal-glass' }
+        }).then(() => {
+          this.openCategoryModal();
+          this.renderCurrentView();
+        });
+      }
+    });
+  },
+
+  confirmDeleteCategory(catId) {
+    const c = window.db.getCategories().find(cat => cat.id === catId);
+    if (!c) return;
+
+    const prodCount = window.db.getProducts().filter(p => p.categoryId === catId).length;
+    const warningText = prodCount > 0 
+      ? `ໝວດ "${c.name}" (${c.code}) ມີສິນຄ້າຜູກພັນຢູ່ ${prodCount} ລາຍການ!<br><br><span class="text-amber-300">ໝາຍເຫດ: ຖ້າລຶບ, ສິນຄ້າເຫຼົ່ານີ້ຈະຍັງຄົງຢູ່ໃນລະບົບແຕ່ຈະບໍ່ມີໝວດສັງກັດ.</span><br><br>ທ່ານແນ່ໃຈບໍ່ທີ່ຈະລຶບໝວດສິນຄ້ານີ້?`
+      : `ທ່ານແນ່ໃຈບໍ່ທີ່ຈະລຶບໝວດ "${c.name}" (${c.code}) ອອກຈາກລະບົບ?`;
+
+    Swal.fire({
+      title: 'ຢືນຢັນການລຶບໝວດສິນຄ້າ?',
+      html: `<div class="text-xs text-left">${warningText}</div>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'ແມ່ນ, ລຶບໝວດສິນຄ້າ',
+      confirmButtonColor: '#ef4444',
+      cancelButtonText: 'ຍົກເລີກ',
+      customClass: { popup: 'swal-glass' }
+    }).then(res => {
+      if (res.isConfirmed) {
+        window.db.deleteCategory(catId);
+        Swal.fire({
+          title: 'ລຶບໝວດສິນຄ້າສຳເລັດ!',
+          text: `ໝວດ ${c.name} ຖືກລຶບອອກຈາກລະບົບແລ້ວ`,
+          icon: 'success',
+          timer: 1400,
+          showConfirmButton: false,
+          customClass: { popup: 'swal-glass' }
+        }).then(() => {
+          this.openCategoryModal();
+          this.renderCurrentView();
+        });
       }
     });
   },
 
   deleteCategory(catId) {
-    window.db.deleteCategory(catId);
-    this.openCategoryModal();
-    this.renderCurrentView();
+    this.confirmDeleteCategory(catId);
   },
 
   // --------------------------------------------------------------------------
@@ -4726,7 +4837,7 @@ const App = {
                     <tr>
                       <td class="text-center opacity-60">${poStartIdx + idx + 1}</td>
                       <td><span class="badge-glass-cyan text-xs font-mono font-bold px-2 py-0.5 rounded">${p.poNumber}</span></td>
-                      <td class="font-bold">${p.supplierName}</td>
+                      <td class="font-bold">${p.supplierName && p.supplierName !== 'undefined' ? p.supplierName : 'ຜູ້ສະໜອງສິນຄ້າ'}</td>
                       <td class="font-mono text-xs whitespace-nowrap">${p.orderDate}</td>
                       <td class="text-right opacity-80">${(p.shippingCost || 0).toLocaleString()} ₭</td>
                       <td class="text-right font-black text-indigo-400">${(p.totalAmount || 0).toLocaleString()} ₭</td>
@@ -4835,7 +4946,7 @@ const App = {
                         </span>
                       </td>
                       <td class="font-bold">
-                        <div>${d.customerName || d.supplierName || (isPoDoc ? 'ສັ່ງຊື້ສິນຄ້າ' : 'ລູກຄ້າທົ່ວໄປ')}</div>
+                        <div>${(!d.customerName || d.customerName === 'undefined') ? (d.supplierName && d.supplierName !== 'undefined' ? d.supplierName : (isPoDoc ? 'ສັ່ງຊື້ສິນຄ້າ (Supplier)' : 'ລູກຄ້າທົ່ວໄປ')) : d.customerName}</div>
                         ${d.refDocId ? `<div class="text-[10px] opacity-70 font-mono text-purple-300">ອ້າງອີງ: ${d.refDocId}</div>` : ''}
                       </td>
                       <td class="font-mono text-xs whitespace-nowrap">
