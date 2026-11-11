@@ -5,7 +5,9 @@
 CREATE TABLE IF NOT EXISTS settings (
     id TEXT PRIMARY KEY DEFAULT 'setting_01',
     shop_name TEXT NOT NULL DEFAULT 'NETD IT Solutions & Services',
+    shop_name_lao TEXT DEFAULT 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ',
     shop_subtitle TEXT DEFAULT 'ສູນບໍລິການຕິດຕັ້ງ ແລະ ຈັດຈຳໜ່າຍອຸປະກອນໄອທີຄົບວົງຈອນ',
+    website TEXT DEFAULT 'www.netditsolutions.com',
     phone TEXT DEFAULT '+856 20 5555 8888 / 021 456 789',
     email TEXT DEFAULT 'info@netd-it.la',
     address TEXT DEFAULT 'ຖະໜົນ ໄກສອນ ພົມວິຫານ, ບ້ານ ໂພນສະອາດ, ເມືອງ ໄຊເສດຖາ, ນະຄອນຫຼວງວຽງຈັນ',
@@ -19,6 +21,8 @@ CREATE TABLE IF NOT EXISTS settings (
     bank_account_name TEXT DEFAULT 'NETD IT SOLUTIONS & SERVICES',
     bank_qr_url TEXT,
     d1_worker_url TEXT,
+    supabase_url TEXT,
+    supabase_anon_key TEXT,
     theme TEXT DEFAULT 'dark',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

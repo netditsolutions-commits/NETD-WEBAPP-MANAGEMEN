@@ -120,7 +120,30 @@ export default {
       const ensureSchema = async () => {
         try {
           await db.exec(`
-            CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY DEFAULT 'setting_01', shop_name TEXT NOT NULL DEFAULT 'NETD IT Solutions & Services', shop_subtitle TEXT, phone TEXT, email TEXT, address TEXT, tax_id TEXT, currency TEXT DEFAULT 'LAK', currency_symbol TEXT DEFAULT '₭', tax_rate REAL DEFAULT 7.0, logo_url TEXT, bank_name TEXT, bank_account_no TEXT, bank_account_name TEXT, bank_qr_url TEXT, d1_worker_url TEXT, theme TEXT DEFAULT 'dark', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS settings (
+              id TEXT PRIMARY KEY DEFAULT 'setting_01', 
+              shop_name TEXT NOT NULL DEFAULT 'NETD IT Solutions & Services', 
+              shop_name_lao TEXT DEFAULT 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ',
+              shop_subtitle TEXT DEFAULT 'ສູນບໍລິການຕິດຕັ້ງ ແລະ ຈັດຈຳໜ່າຍອຸປະກອນໄອທີຄົບວົງຈອນ', 
+              website TEXT DEFAULT 'www.netditsolutions.com',
+              phone TEXT DEFAULT '+856 20 5555 8888 / 021 456 789', 
+              email TEXT DEFAULT 'info@netd-it.la', 
+              address TEXT DEFAULT 'ຖະໜົນ ໄກສອນ ພົມວິຫານ, ບ້ານ ໂພນສະອາດ, ເມືອງ ໄຊເສດຖາ, ນະຄອນຫຼວງວຽງຈັນ', 
+              tax_id TEXT DEFAULT 'TAX-0102030405-LA', 
+              currency TEXT DEFAULT 'LAK', 
+              currency_symbol TEXT DEFAULT '₭', 
+              tax_rate REAL DEFAULT 7.0, 
+              logo_url TEXT DEFAULT 'Logo.png', 
+              bank_name TEXT DEFAULT 'ທະນາຄານການຄ້າຕ່າງປະເທດລາວ (BCEL)', 
+              bank_account_no TEXT DEFAULT '010-12-00-01234567-001', 
+              bank_account_name TEXT DEFAULT 'NETD IT SOLUTIONS & SERVICES', 
+              bank_qr_url TEXT, 
+              d1_worker_url TEXT, 
+              supabase_url TEXT,
+              supabase_anon_key TEXT,
+              theme TEXT DEFAULT 'dark', 
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, name TEXT NOT NULL, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'technician', role_name TEXT, position TEXT, phone TEXT, email TEXT, avatar TEXT, address TEXT, joined_date DATE, salary REAL DEFAULT 0, status TEXT DEFAULT 'active', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'individual', name TEXT NOT NULL, company TEXT, contact_person TEXT, phone TEXT NOT NULL, email TEXT, address TEXT, tax_id TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT UNIQUE NOT NULL, description TEXT, icon TEXT DEFAULT 'fa-box', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
@@ -141,6 +164,34 @@ export default {
             CREATE TABLE IF NOT EXISTS client_systems (id TEXT PRIMARY KEY, system_name TEXT NOT NULL, customer_id TEXT NOT NULL, domain_url TEXT, hosting_provider TEXT, launch_date DATE, expiry_date DATE, sla_type TEXT DEFAULT 'SLA Gold 24/7', status TEXT DEFAULT 'active', price REAL DEFAULT 0, tech_stack TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS activity_logs (id TEXT PRIMARY KEY, user TEXT, action TEXT, module TEXT, details TEXT, time TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
           `);
+
+          // Safe column migrations for settings table
+          const settingsCols = [
+            "shop_name_lao TEXT DEFAULT 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ'",
+            "website TEXT DEFAULT 'www.netditsolutions.com'",
+            "supabase_url TEXT",
+            "supabase_anon_key TEXT",
+            "bank_qr_url TEXT",
+            "logo_url TEXT",
+            "bank_name TEXT",
+            "bank_account_no TEXT",
+            "bank_account_name TEXT",
+            "d1_worker_url TEXT",
+            "theme TEXT DEFAULT 'dark'"
+          ];
+          for (const colDef of settingsCols) {
+            try {
+              await db.exec(`ALTER TABLE settings ADD COLUMN ${colDef}`);
+            } catch (e) {}
+          }
+
+          // Ensure default setting row exists in D1
+          try {
+            await db.exec(`
+              INSERT OR IGNORE INTO settings (id, shop_name, shop_name_lao, website) 
+              VALUES ('setting_01', 'NETD IT Solutions & Services', 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ', 'www.netditsolutions.com')
+            `);
+          } catch (e) {}
         } catch (e) {
           console.warn("Schema init error:", e.message);
         }
@@ -409,7 +460,16 @@ export default {
             const { results } = await db.prepare(`SELECT * FROM ${dbTable}`).all();
             if (clientKey === "settings") {
               const settingRow = results && results.length > 0 ? results[0] : null;
-              resultData.settings = settingRow ? objectToCamel(settingRow) : {};
+              if (settingRow) {
+                resultData.settings = objectToCamel(settingRow);
+              } else {
+                resultData.settings = {
+                  id: "setting_01",
+                  shopName: "NETD IT Solutions & Services",
+                  shopNameLao: "ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ",
+                  website: "www.netditsolutions.com"
+                };
+              }
             } else {
               resultData[clientKey] = (results || []).map(r => {
                 const camel = objectToCamel(r);
