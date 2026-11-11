@@ -2665,9 +2665,34 @@ class DatabaseManager {
     };
   }
 
-  updateSettings(newSettings) {
-    this.data.settings = { ...this.data.settings, ...newSettings };
-    this.notify();
+  async updateSettings(newSettings) {
+    if (!this.data.settings) this.data.settings = {};
+    this.data.settings = { 
+      id: 'setting_01',
+      ...this.data.settings, 
+      ...newSettings 
+    };
+    if (!this.data.settings.id) this.data.settings.id = 'setting_01';
+
+    // Persist Supabase settings locally
+    if (newSettings.supabaseUrl !== undefined && typeof localStorage !== 'undefined') {
+      localStorage.setItem('netd_supabase_url', newSettings.supabaseUrl || '');
+    }
+    if (newSettings.supabaseAnonKey !== undefined && typeof localStorage !== 'undefined') {
+      localStorage.setItem('netd_supabase_key', newSettings.supabaseAnonKey || '');
+    }
+
+    this.saveLocal();
+    this.notify(true, false);
+
+    // Direct Remote Sync to Supabase or Cloudflare D1
+    try {
+      await this.syncRecordToRemote('settings', this.data.settings);
+    } catch (e) {
+      console.warn('Sync settings error:', e);
+    }
+
+    return this.data.settings;
   }
 
   exportBackupJson() {
@@ -2789,7 +2814,16 @@ class DatabaseManager {
 
       const pData = result.data;
       if (pData.settings && Object.keys(pData.settings).length > 0) {
-        this.data.settings = { ...this.data.settings, ...pData.settings };
+        const curWorkerUrl = this.data.settings && this.data.settings.d1WorkerUrl;
+        const curSbUrl = this.data.settings && this.data.settings.supabaseUrl;
+        const curSbKey = this.data.settings && this.data.settings.supabaseAnonKey;
+        this.data.settings = { 
+          ...this.data.settings, 
+          ...pData.settings,
+          d1WorkerUrl: pData.settings.d1WorkerUrl || curWorkerUrl || '',
+          supabaseUrl: pData.settings.supabaseUrl || curSbUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || '',
+          supabaseAnonKey: pData.settings.supabaseAnonKey || curSbKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || ''
+        };
       }
 
       const tableKeys = [

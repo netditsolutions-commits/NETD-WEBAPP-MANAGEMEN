@@ -260,7 +260,15 @@ const App = {
     if (window.db && typeof window.db.subscribe === 'function') {
       window.db.subscribe(() => {
         try { this.updateLiveHeader(); } catch (e) {}
-        try { this.renderCurrentView(); } catch (e) {}
+        try {
+          // Do not re-render if user is on settings view or actively typing in an input
+          if (this.currentView === 'settings') return;
+          const activeEl = document.activeElement;
+          if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT')) {
+            return;
+          }
+          this.renderCurrentView();
+        } catch (e) {}
       });
     }
 
@@ -9168,9 +9176,26 @@ const App = {
     const s = window.db.getSettings();
     container.innerHTML = `
       <div class="space-y-6 max-w-4xl">
-        <h1 class="text-2xl font-black flex items-center gap-3">
-          <i class="fa-solid fa-gear text-slate-300"></i> ຕັ້ງຄ່າລະບົບ, ໂລໂກ້ & ບັນຊີທະນາຄານ
-        </h1>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h1 class="text-2xl font-black flex items-center gap-3">
+            <i class="fa-solid fa-gear text-slate-300"></i> ຕັ້ງຄ່າລະບົບ, ໂລໂກ້ & ບັນຊີທະນາຄານ
+          </h1>
+          <button type="button" onclick="App.saveAllSettings()" class="btn-glass-primary py-2 px-5 text-xs font-bold flex items-center gap-2 shadow-lg shadow-sky-500/20">
+            <i class="fa-solid fa-floppy-disk text-sm"></i> 💾 ບັນທຶກການຕັ້ງຄ່າທັງໝົດ
+          </button>
+        </div>
+
+        <!-- Top Action & Status bar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-white/5 border border-white/10 p-3.5 rounded-2xl">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="font-bold text-white">ສະຖານະການຕັ້ງຄ່າ:</span>
+            <span class="text-slate-300">ພ້ອມແກ້ໄຂ, ບັນທຶກ ແລະ ຊິ້ງອັດຕະໂນມັດທັນທີ</span>
+          </div>
+          <div class="text-[11px] text-slate-400">
+            ກົດປຸ່ມ <strong>"ບັນທຶກ"</strong> ເພື່ອບັນທຶກລົງຖານຂໍ້ມູນທັງໝົດ
+          </div>
+        </div>
 
         <!-- Supabase Cloud Database Box (Primary) -->
         <div class="glass-panel p-5 border border-emerald-500/40 relative overflow-hidden shadow-2xl">
@@ -9215,7 +9240,7 @@ const App = {
           <div class="space-y-3 text-xs pt-3 mt-2 border-t border-white/10">
             <div>
               <label class="block mb-1 font-bold">Cloudflare Worker API Endpoint</label>
-              <input type="url" id="cfg-worker-url" class="glass-input w-full font-mono" value="${s.d1WorkerUrl || ''}" placeholder="https://netd-webapp-api.your-subdomain.workers.dev">
+              <input type="url" id="cfg-worker-url" class="glass-input w-full font-mono" value="${s.d1WorkerUrl || ''}" placeholder="https://netd-manage-webapp.netditsolutions.workers.dev">
             </div>
             <div class="flex flex-wrap gap-2 pt-1">
               <button onclick="App.saveD1Endpoint()" class="btn-glass-primary">ບັນທຶກ URL</button>
@@ -9228,9 +9253,14 @@ const App = {
 
         <!-- Shop Profile & Logo -->
         <div class="glass-panel p-5 space-y-4">
-          <h3 class="font-bold mb-1 flex items-center gap-2">
-            <i class="fa-solid fa-store text-sky-400"></i> ຂໍ້ມູນຮ້ານໄອທີ & ໂລໂກ້ບໍລິສັດ
-          </h3>
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold mb-1 flex items-center gap-2">
+              <i class="fa-solid fa-store text-sky-400"></i> ຂໍ້ມູນຮ້ານໄອທີ & ໂລໂກ້ບໍລິສັດ
+            </h3>
+            <button type="button" onclick="App.saveAllSettings()" class="btn-glass-primary text-xs py-1.5 px-4 flex items-center gap-1.5">
+              <i class="fa-solid fa-floppy-disk"></i> ບັນທຶກ
+            </button>
+          </div>
 
           <!-- Logo Browse & Preview -->
           <div class="p-3 rounded-xl bg-white/5 border border-white/10 space-y-2">
@@ -9262,7 +9292,7 @@ const App = {
             </div>
             <div>
               <label class="block mb-1 font-bold">ຊື່ຮ້ານ / ບໍລິສັດ (ພາສາລາວ ເທິງຫົວເອກະສານ)</label>
-              <input type="text" id="cfg-namelao" class="glass-input w-full" value="${s.shopNameLao || 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ'}" placeholder="ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ">
+              <input type="text" id="cfg-namelao" class="glass-input w-full" value="${s.shopNameLao || ''}" placeholder="ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ">
             </div>
             <div>
               <label class="block mb-1 font-bold">ຄຳຂວັນ / ຄຳອະທິບາຍ (Subtitle)</label>
@@ -9270,7 +9300,7 @@ const App = {
             </div>
             <div>
               <label class="block mb-1 font-bold">ເວັບໄຊ (Website)</label>
-              <input type="text" id="cfg-website" class="glass-input w-full" value="${s.website || 'www.netditsolutions.com'}" placeholder="www.netditsolutions.com">
+              <input type="text" id="cfg-website" class="glass-input w-full" value="${s.website || ''}" placeholder="www.netditsolutions.com">
             </div>
             <div>
               <label class="block mb-1 font-bold">ເບີໂທລະສັບ</label>
@@ -9290,33 +9320,44 @@ const App = {
             </div>
             <div>
               <label class="block mb-1 font-bold">ອັດຕາອາກອນມູນຄ່າເພີ່ມ VAT (%)</label>
-              <input type="number" id="cfg-taxrate" class="glass-input w-full" value="${s.taxRate || 7}">
+              <input type="number" id="cfg-taxrate" class="glass-input w-full" value="${s.taxRate !== undefined ? s.taxRate : 7}">
             </div>
+          </div>
+
+          <div class="pt-2 flex justify-end">
+            <button type="button" onclick="App.saveAllSettings()" class="btn-glass-primary text-xs py-2 px-5 flex items-center gap-1.5">
+              <i class="fa-solid fa-floppy-disk"></i> ບັນທຶກຂໍ້ມູນຮ້ານ & ໂລໂກ້
+            </button>
           </div>
         </div>
 
         <!-- Bank Accounts & Payment QR -->
         <div class="glass-panel p-5 space-y-4">
-          <h3 class="font-bold mb-1 flex items-center gap-2">
-            <i class="fa-solid fa-building-columns text-emerald-400"></i> ຂໍ້ມູນບັນຊີທະນາຄານ & QR Code ຮັບເງິນ
-          </h3>
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold mb-1 flex items-center gap-2">
+              <i class="fa-solid fa-building-columns text-emerald-400"></i> ຂໍ້ມູນບັນຊີທະນາຄານ & QR Code ຮັບເງິນ
+            </h3>
+            <button type="button" onclick="App.saveAllSettings()" class="btn-glass-primary text-xs py-1.5 px-4 flex items-center gap-1.5">
+              <i class="fa-solid fa-floppy-disk"></i> ບັນທຶກ
+            </button>
+          </div>
           <p class="text-xs opacity-75">ຂໍ້ມູນນີ້ຈະຖືກນຳໄປສະແດງໃນໃບເກັບເງິນ (Invoice), ໃບສະເໜີລາຄາ (Quotation) ແລະ ໃບບິນໜ້າຮ້ານ (POS Slip) ເພື່ອໃຫ້ລູກຄ້າສະແກນຈ່າຍເງິນ</p>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
             <div>
               <label class="block mb-1 font-bold">ຊື່ທະນາຄານ</label>
-              <input type="text" id="cfg-bank-name" class="glass-input w-full" value="${s.bankName || 'ທະນາຄານການຄ້າຕ່າງປະເທດລາວ (BCEL)'}" placeholder="ເຊັ່ນ: ທະນາຄານການຄ້າຕ່າງປະເທດລາວ (BCEL)">
+              <input type="text" id="cfg-bank-name" class="glass-input w-full" value="${s.bankName || ''}" placeholder="ເຊັ່ນ: ທະນາຄານການຄ້າຕ່າງປະເທດລາວ (BCEL)">
             </div>
             <div>
               <label class="block mb-1 font-bold flex items-center justify-between">
                 <span>ເລກບັນຊີ (Account Number)</span>
                 <span class="text-[10px] text-sky-400 font-normal">ພິມໄດ້ຫຼາຍບັນທັດ (LAK, USD, THB...)</span>
               </label>
-              <textarea id="cfg-bank-acc" rows="2" class="glass-input w-full font-mono font-bold text-sky-400 text-xs py-1.5 leading-relaxed" placeholder="ເຊັ່ນ:&#10;LAK: 010-12-00-01234567-001&#10;USD: 010-12-01-09876543-001">${s.bankAccountNo || '010-12-00-01234567-001'}</textarea>
+              <textarea id="cfg-bank-acc" rows="2" class="glass-input w-full font-mono font-bold text-sky-400 text-xs py-1.5 leading-relaxed" placeholder="ເຊັ່ນ:&#10;LAK: 010-12-00-01234567-001&#10;USD: 010-12-01-09876543-001">${s.bankAccountNo || ''}</textarea>
             </div>
             <div class="md:col-span-2">
               <label class="block mb-1 font-bold">ຊື່ເຈົ້າຂອງບັນຊີ (Account Name)</label>
-              <input type="text" id="cfg-bank-accname" class="glass-input w-full" value="${s.bankAccountName || 'NETD IT SOLUTIONS & SERVICES'}" placeholder="ຊື່ບັນຊີທະນາຄານ">
+              <input type="text" id="cfg-bank-accname" class="glass-input w-full" value="${s.bankAccountName || ''}" placeholder="ຊື່ບັນຊີທະນາຄານ">
             </div>
           </div>
 
@@ -9343,9 +9384,11 @@ const App = {
             </div>
           </div>
 
-          <button onclick="App.saveShopSettings()" class="btn-glass-primary text-xs py-2 px-5">
-            <i class="fa-solid fa-floppy-disk mr-1"></i> ບັນທຶກຂໍ້ມູນຮ້ານ & ບັນຊີທະນາຄານ
-          </button>
+          <div class="pt-2 flex justify-end">
+            <button type="button" onclick="App.saveAllSettings()" class="btn-glass-primary text-xs py-2 px-5 flex items-center gap-1.5">
+              <i class="fa-solid fa-floppy-disk"></i> ບັນທຶກຂໍ້ມູນຮ້ານ & ບັນຊີທະນາຄານ
+            </button>
+          </div>
         </div>
 
         <!-- Backup & Restore -->
@@ -9391,32 +9434,69 @@ const App = {
     `;
   },
 
-  saveShopSettings() {
-    window.db.updateSettings({
-      shopName: document.getElementById('cfg-name')?.value?.trim(),
-      shopNameLao: document.getElementById('cfg-namelao')?.value?.trim() || 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ',
-      shopSubtitle: document.getElementById('cfg-subtitle')?.value?.trim(),
-      website: document.getElementById('cfg-website')?.value?.trim() || 'www.netditsolutions.com',
-      phone: document.getElementById('cfg-phone')?.value?.trim(),
-      email: document.getElementById('cfg-email')?.value?.trim(),
-      address: document.getElementById('cfg-addr')?.value?.trim(),
-      taxId: document.getElementById('cfg-tax')?.value?.trim(),
+  async saveAllSettings() {
+    Swal.fire({
+      title: 'ກຳລັງບັນທຶກການຕັ້ງຄ່າ...',
+      text: 'ກຳລັງບັນທຶກ ແລະ ຊິ້ງຂໍ້ມູນຂຶ້ນ Cloud/D1...',
+      didOpen: () => Swal.showLoading(),
+      allowOutsideClick: false,
+      customClass: { popup: 'swal-glass' }
+    });
+
+    const newCfg = {
+      shopName: document.getElementById('cfg-name')?.value?.trim() || '',
+      shopNameLao: document.getElementById('cfg-namelao')?.value?.trim() || '',
+      shopSubtitle: document.getElementById('cfg-subtitle')?.value?.trim() || '',
+      website: document.getElementById('cfg-website')?.value?.trim() || '',
+      phone: document.getElementById('cfg-phone')?.value?.trim() || '',
+      email: document.getElementById('cfg-email')?.value?.trim() || '',
+      address: document.getElementById('cfg-addr')?.value?.trim() || '',
+      taxId: document.getElementById('cfg-tax')?.value?.trim() || '',
       taxRate: parseFloat(document.getElementById('cfg-taxrate')?.value || '7'),
-      logoUrl: document.getElementById('cfg-logo')?.value?.trim(),
-      bankName: document.getElementById('cfg-bank-name')?.value?.trim(),
-      bankAccountNo: document.getElementById('cfg-bank-acc')?.value?.trim(),
-      bankAccountName: document.getElementById('cfg-bank-accname')?.value?.trim(),
-      bankQrUrl: document.getElementById('cfg-bank-qr')?.value?.trim()
-    });
-    this.updateLiveHeader();
-    Swal.fire({ 
-      title: 'ບັນທຶກສຳເລັດ!', 
-      text: 'ຂໍ້ມູນຮ້ານ, ໂລໂກ້ ແລະ ບັນຊີທະນາຄານຖືກບັນທຶກ ແລະ ນຳໄປໃຊ້ໃນເອກະສານແລ້ວ', 
-      icon: 'success', 
-      timer: 1800, 
-      showConfirmButton: false, 
-      customClass: { popup: 'swal-glass' } 
-    });
+      logoUrl: document.getElementById('cfg-logo')?.value?.trim() || 'Logo.png',
+      bankName: document.getElementById('cfg-bank-name')?.value?.trim() || '',
+      bankAccountNo: document.getElementById('cfg-bank-acc')?.value?.trim() || '',
+      bankAccountName: document.getElementById('cfg-bank-accname')?.value?.trim() || '',
+      bankQrUrl: document.getElementById('cfg-bank-qr')?.value?.trim() || ''
+    };
+
+    const workerUrlInput = document.getElementById('cfg-worker-url')?.value?.trim();
+    if (workerUrlInput) {
+      newCfg.d1WorkerUrl = workerUrlInput;
+    }
+    const sbUrlInput = document.getElementById('cfg-supabase-url')?.value?.trim();
+    if (sbUrlInput) {
+      newCfg.supabaseUrl = sbUrlInput;
+    }
+    const sbKeyInput = document.getElementById('cfg-supabase-key')?.value?.trim();
+    if (sbKeyInput) {
+      newCfg.supabaseAnonKey = sbKeyInput;
+    }
+
+    try {
+      await window.db.updateSettings(newCfg);
+      this.updateLiveHeader();
+
+      Swal.fire({ 
+        title: 'ບັນທຶກສຳເລັດ!', 
+        text: 'ຂໍ້ມູນຮ້ານ, ໂລໂກ້ ແລະ ບັນຊີທະນາຄານຖືກບັນທຶກ ແລະ Sync ຂຶ້ນ Cloud/D1 ຮຽບຮ້ອຍແລ້ວ', 
+        icon: 'success', 
+        timer: 1800, 
+        showConfirmButton: false, 
+        customClass: { popup: 'swal-glass' } 
+      });
+    } catch (err) {
+      Swal.fire({
+        title: 'ເກີດຂໍ້ຜິດພາດ',
+        text: 'ບໍ່ສາມາດບັນທຶກຂໍ້ມູນໄດ້: ' + (err.message || err),
+        icon: 'error',
+        customClass: { popup: 'swal-glass' }
+      });
+    }
+  },
+
+  saveShopSettings() {
+    return this.saveAllSettings();
   },
 
   downloadDatabaseBackup() {
