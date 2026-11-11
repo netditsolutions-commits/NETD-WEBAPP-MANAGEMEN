@@ -57,7 +57,7 @@ const VALID_COLUMNS = {
     "id", "name", "code", "description", "icon", "created_at"
   ],
   brands: [
-    "id", "name", "logo_url", "category_id", "category", "contact_info", "warranty_policy", "created_at"
+    "id", "name", "logo_url", "category_id", "category", "contact", "contact_info", "warranty", "warranty_policy", "created_at"
   ],
   suppliers: [
     "id", "name", "contact_person", "phone", "email", "address", "payment_terms", "terms", "notes", "created_at"
@@ -251,7 +251,7 @@ export default {
             CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, name TEXT NOT NULL, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'technician', role_name TEXT, position TEXT, phone TEXT, email TEXT, avatar TEXT, address TEXT, joined_date DATE, salary REAL DEFAULT 0, status TEXT DEFAULT 'active', notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'individual', name TEXT NOT NULL, company TEXT, contact_person TEXT, phone TEXT NOT NULL, email TEXT, address TEXT, tax_id TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT UNIQUE NOT NULL, description TEXT, icon TEXT DEFAULT 'fa-box', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS brands (id TEXT PRIMARY KEY, name TEXT NOT NULL, logo_url TEXT, category_id TEXT, contact_info TEXT, warranty_policy TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS brands (id TEXT PRIMARY KEY, name TEXT NOT NULL, logo_url TEXT, category_id TEXT, category TEXT, contact TEXT, contact_info TEXT, warranty TEXT, warranty_policy TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, contact_person TEXT, phone TEXT NOT NULL, email TEXT, address TEXT, payment_terms TEXT, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, sku TEXT UNIQUE NOT NULL, name TEXT NOT NULL, model TEXT, sn_or_mac TEXT, category_id TEXT NOT NULL, brand_id TEXT, supplier_id TEXT, supplier_name TEXT, cost_price REAL NOT NULL DEFAULT 0, profit_margin REAL DEFAULT 0, sale_price REAL NOT NULL DEFAULT 0, selling_price REAL NOT NULL DEFAULT 0, stock INTEGER NOT NULL DEFAULT 0, stock_qty INTEGER NOT NULL DEFAULT 0, min_stock INTEGER NOT NULL DEFAULT 2, min_stock_alert INTEGER NOT NULL DEFAULT 3, unit TEXT NOT NULL DEFAULT 'ເຄື່ອງ', has_sn INTEGER DEFAULT 1, warranty_period TEXT DEFAULT '1 ປີ', location TEXT, image_url TEXT, barcode TEXT, description TEXT, specifications TEXT, status TEXT DEFAULT 'in_stock', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS product_serials (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, serial_number TEXT UNIQUE NOT NULL, mac_address TEXT, status TEXT NOT NULL DEFAULT 'in_stock', purchase_order_id TEXT, invoice_id TEXT, warranty_months INTEGER DEFAULT 12, location TEXT DEFAULT 'ສາງໃຫຍ່', received_date DATETIME DEFAULT CURRENT_TIMESTAMP, sold_date DATE, customer_id TEXT, customer_name TEXT, warranty_expire DATE, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
@@ -272,16 +272,39 @@ export default {
           // Safe column migrations for older existing databases
           const migrations = [
             "ALTER TABLE settings ADD COLUMN shop_name_lao TEXT DEFAULT 'ເນັດດີ ໄອທີ ໂຊລູຊັ່ນ'",
+            "ALTER TABLE settings ADD COLUMN shop_subtitle TEXT DEFAULT 'ສູນບໍລິການຕິດຕັ້ງ ແລະ ຈັດຈຳໜ່າຍອຸປະກອນໄອທີຄົບວົງຈອນ'",
             "ALTER TABLE settings ADD COLUMN website TEXT DEFAULT 'www.netditsolutions.com'",
+            "ALTER TABLE settings ADD COLUMN phone TEXT DEFAULT '+856 20 5555 8888 / 021 456 789'",
+            "ALTER TABLE settings ADD COLUMN email TEXT DEFAULT 'info@netd-it.la'",
+            "ALTER TABLE settings ADD COLUMN address TEXT DEFAULT 'ຖະໜົນ ໄກສອນ ພົມວິຫານ, ບ້ານ ໂພນສະອາດ, ເມືອງ ໄຊເສດຖາ, ນະຄອນຫຼວງວຽງຈັນ'",
+            "ALTER TABLE settings ADD COLUMN tax_id TEXT DEFAULT 'TAX-0102030405-LA'",
+            "ALTER TABLE settings ADD COLUMN currency TEXT DEFAULT 'LAK'",
+            "ALTER TABLE settings ADD COLUMN currency_symbol TEXT DEFAULT '₭'",
+            "ALTER TABLE settings ADD COLUMN tax_rate REAL DEFAULT 7.0",
+            "ALTER TABLE settings ADD COLUMN logo_url TEXT DEFAULT 'Logo.png'",
+            "ALTER TABLE settings ADD COLUMN bank_name TEXT DEFAULT 'ທະນາຄານການຄ້າຕ່າງປະເທດລາວ (BCEL)'",
+            "ALTER TABLE settings ADD COLUMN bank_account_no TEXT DEFAULT '010-12-00-01234567-001'",
+            "ALTER TABLE settings ADD COLUMN bank_account_name TEXT DEFAULT 'NETD IT SOLUTIONS & SERVICES'",
+            "ALTER TABLE settings ADD COLUMN bank_qr_url TEXT",
+            "ALTER TABLE settings ADD COLUMN d1_worker_url TEXT",
             "ALTER TABLE settings ADD COLUMN supabase_url TEXT",
             "ALTER TABLE settings ADD COLUMN supabase_anon_key TEXT",
-            "ALTER TABLE settings ADD COLUMN d1_worker_url TEXT",
+            "ALTER TABLE settings ADD COLUMN theme TEXT DEFAULT 'dark'",
+            "ALTER TABLE settings ADD COLUMN updated_at DATETIME",
+            "ALTER TABLE brands ADD COLUMN category TEXT",
+            "ALTER TABLE brands ADD COLUMN contact TEXT",
+            "ALTER TABLE brands ADD COLUMN warranty TEXT",
             "ALTER TABLE products ADD COLUMN sale_price REAL DEFAULT 0",
+            "ALTER TABLE products ADD COLUMN selling_price REAL DEFAULT 0",
             "ALTER TABLE products ADD COLUMN profit_margin REAL DEFAULT 0",
             "ALTER TABLE products ADD COLUMN stock INTEGER DEFAULT 0",
+            "ALTER TABLE products ADD COLUMN stock_qty INTEGER DEFAULT 0",
             "ALTER TABLE products ADD COLUMN min_stock INTEGER DEFAULT 2",
+            "ALTER TABLE products ADD COLUMN min_stock_alert INTEGER DEFAULT 3",
             "ALTER TABLE products ADD COLUMN has_sn INTEGER DEFAULT 1",
             "ALTER TABLE products ADD COLUMN description TEXT",
+            "ALTER TABLE product_serials ADD COLUMN customer_id TEXT",
+            "ALTER TABLE product_serials ADD COLUMN customer_name TEXT",
             "ALTER TABLE product_serials ADD COLUMN purchase_order_id TEXT",
             "ALTER TABLE product_serials ADD COLUMN invoice_id TEXT",
             "ALTER TABLE product_serials ADD COLUMN location TEXT DEFAULT 'ສາງໃຫຍ່'",
@@ -367,6 +390,13 @@ export default {
             if (row.stock_qty === undefined && row.stock !== undefined) row.stock_qty = row.stock;
             if (row.has_sn === undefined && rawRow.hasSn !== undefined) row.has_sn = rawRow.hasSn ? 1 : 0;
           }
+          if (targetTable === "brands") {
+            if (!row.category && rawRow.category) row.category = rawRow.category;
+            if (!row.contact && rawRow.contact) row.contact = rawRow.contact;
+            if (!row.contact_info && rawRow.contact) row.contact_info = rawRow.contact;
+            if (!row.warranty && rawRow.warranty) row.warranty = rawRow.warranty;
+            if (!row.warranty_policy && rawRow.warranty) row.warranty_policy = rawRow.warranty;
+          }
           if (targetTable === "product_serials") {
             if (!row.location && rawRow.location) row.location = rawRow.location;
             if (!row.received_date && rawRow.receivedDate) row.received_date = rawRow.receivedDate;
@@ -377,8 +407,7 @@ export default {
 
           const cols = filteredKeys.join(", ");
           const placeholders = filteredKeys.map(() => "?").join(", ");
-          const updateSets = filteredKeys.filter(k => k !== "id").map(k => `${k} = excluded.${k}`).join(", ");
-          const sql = `INSERT INTO ${targetTable} (${cols}) VALUES (${placeholders}) ON CONFLICT(id) DO UPDATE SET ${updateSets}`;
+          const sql = `INSERT OR REPLACE INTO ${targetTable} (${cols}) VALUES (${placeholders})`;
           const values = filteredKeys.map(k => typeof row[k] === "object" ? JSON.stringify(row[k]) : row[k]);
           stmts.push(db.prepare(sql).bind(...values));
         }
@@ -458,6 +487,14 @@ export default {
               if (row.stock_qty === undefined) row.stock_qty = rawRow.stock !== undefined ? rawRow.stock : (rawRow.stockQty || 0);
               if (row.stock === undefined) row.stock = row.stock_qty;
               if (row.has_sn === undefined) row.has_sn = rawRow.hasSn !== undefined ? (rawRow.hasSn ? 1 : 0) : 1;
+            }
+
+            if (table === "brands") {
+              if (!row.category && rawRow.category) row.category = rawRow.category;
+              if (!row.contact && rawRow.contact) row.contact = rawRow.contact;
+              if (!row.contact_info && rawRow.contact) row.contact_info = rawRow.contact;
+              if (!row.warranty && rawRow.warranty) row.warranty = rawRow.warranty;
+              if (!row.warranty_policy && rawRow.warranty) row.warranty_policy = rawRow.warranty;
             }
 
             if (table === "product_serials") {
@@ -620,6 +657,14 @@ export default {
                   if (camel.itemsJson) {
                     try { camel.items = JSON.parse(camel.itemsJson); } catch (e) {}
                   }
+                }
+
+                // Brands mapping
+                if (clientKey === "brands") {
+                  if (!camel.contact && camel.contactInfo) camel.contact = camel.contactInfo;
+                  if (!camel.contactInfo && camel.contact) camel.contactInfo = camel.contact;
+                  if (!camel.warranty && camel.warrantyPolicy) camel.warranty = camel.warrantyPolicy;
+                  if (!camel.warrantyPolicy && camel.warranty) camel.warrantyPolicy = camel.warranty;
                 }
 
                 // Projects mapping

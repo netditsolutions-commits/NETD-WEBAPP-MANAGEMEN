@@ -74,7 +74,10 @@ CREATE TABLE IF NOT EXISTS brands (
     name TEXT NOT NULL,
     logo_url TEXT,
     category_id TEXT,
+    category TEXT,
+    contact TEXT,
     contact_info TEXT,
+    warranty TEXT,
     warranty_policy TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
