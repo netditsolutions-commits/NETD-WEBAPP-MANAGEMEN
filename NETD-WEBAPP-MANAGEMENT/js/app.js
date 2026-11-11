@@ -9605,7 +9605,7 @@ const App = {
       this.updateLiveHeader();
 
       if (syncResult && !syncResult.success) {
-        console.warn('D1 sync notice during settings save:', syncResult.error);
+        throw new Error(syncResult.error || 'D1 Sync Error');
       }
 
       Swal.fire({ 

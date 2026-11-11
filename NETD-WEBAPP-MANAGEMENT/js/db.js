@@ -31,9 +31,9 @@ const DEFAULT_DATABASE = {
     bankQrUrl: '',
     supabaseUrl: '',
     supabaseAnonKey: '',
-    d1WorkerUrl: '',
+    d1WorkerUrl: 'https://netd-manage-webapp.netditsolutions.workers.dev',
     d1DatabaseId: 'netd_it_management',
-    syncMode: 'supabase_realtime',
+    syncMode: 'cloudflare_d1',
     theme: 'dark', // 'dark' or 'light'
     lastSync: null
   },
@@ -1030,9 +1030,9 @@ class DatabaseManager {
             ...(parsed.settings || {}),
             supabaseUrl: (parsed.settings && parsed.settings.supabaseUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || '').trim(),
             supabaseAnonKey: (parsed.settings && parsed.settings.supabaseAnonKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || '').trim(),
-            d1WorkerUrl: (parsed.settings && parsed.settings.d1WorkerUrl && !parsed.settings.d1WorkerUrl.includes('netd-manage-web.netditsolutions.workers.dev')) 
+            d1WorkerUrl: (parsed.settings && parsed.settings.d1WorkerUrl && !parsed.settings.d1WorkerUrl.includes('netd-manage-web.netditsolutions.workers.dev') && !parsed.settings.d1WorkerUrl.includes('vercel.app')) 
               ? parsed.settings.d1WorkerUrl.trim() 
-              : ''
+              : 'https://netd-manage-webapp.netditsolutions.workers.dev'
           },
           itJobs: parsed.itJobs || DEFAULT_DATABASE.itJobs,
           itJobCategories: Array.isArray(parsed.itJobCategories) ? parsed.itJobCategories : DEFAULT_DATABASE.itJobCategories,
@@ -1369,24 +1369,24 @@ class DatabaseManager {
 
   getWorkerUrl() {
     let url = (this.data && this.data.settings && this.data.settings.d1WorkerUrl || '').trim();
-    // Clear outdated demo/legacy worker URLs
-    if (url.includes('netd-manage-web.netditsolutions.workers.dev')) {
-      url = '';
-      if (this.data && this.data.settings) this.data.settings.d1WorkerUrl = '';
+    // Clear outdated demo/legacy worker URLs or Vercel origins (Vercel is static frontend, not D1 worker)
+    if (!url || url.includes('netd-manage-web.netditsolutions.workers.dev') || url.includes('vercel.app')) {
+      const stored = (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_worker_url') : '') || '';
+      url = (stored && !stored.includes('vercel.app')) ? stored.trim() : 'https://netd-manage-webapp.netditsolutions.workers.dev';
+      if (this.data && this.data.settings) this.data.settings.d1WorkerUrl = url;
     }
 
-    // If not manually configured, check if running directly on Cloudflare domain
+    // If running on worker or custom domain (NOT localhost, github.io, or vercel.app)
     if (!url) {
       if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
         const host = window.location.hostname;
-        // Only auto-bind origin if running online on cloudflare or custom live domain (NOT localhost / 127.0.0.1 / github.io)
-        if (host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('github.io')) {
+        if (host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('github.io') && !host.endsWith('vercel.app')) {
           url = window.location.origin;
           if (this.data && this.data.settings) this.data.settings.d1WorkerUrl = url;
         }
       }
     }
-    return url;
+    return url || 'https://netd-manage-webapp.netditsolutions.workers.dev';
   }
 
   subscribe(fn) {
@@ -2871,7 +2871,7 @@ class DatabaseManager {
         this.data.settings = { 
           ...this.data.settings, 
           ...cleanRemote,
-          d1WorkerUrl: cleanRemote.d1WorkerUrl || curWorkerUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_worker_url') : '') || '',
+          d1WorkerUrl: cleanRemote.d1WorkerUrl || curWorkerUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_worker_url') : '') || 'https://netd-manage-webapp.netditsolutions.workers.dev',
           supabaseUrl: cleanRemote.supabaseUrl || curSbUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || '',
           supabaseAnonKey: cleanRemote.supabaseAnonKey || curSbKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || ''
         };
@@ -2887,7 +2887,7 @@ class DatabaseManager {
       const deletedSet = new Set(this.getDeletedIds());
       tableKeys.forEach(tk => {
         if (Array.isArray(pData[tk])) {
-          this.data[tk] = pData[tk].map(item => {
+          const processedRemote = pData[tk].map(item => {
             if (tk === 'documents') {
               if (!item.docType && item.type) item.docType = item.type;
               if (item.grandTotal === undefined && item.totalAmount !== undefined) item.grandTotal = item.totalAmount;
@@ -2938,6 +2938,14 @@ class DatabaseManager {
             }
             return item;
           }).filter(item => item && !deletedSet.has(item.id) && !deletedSet.has(item.docNumber) && !deletedSet.has(item.poNumber));
+
+          // Smart Merge: Preserve local records that are not yet in D1 and have not been deleted
+          const remoteIdSet = new Set(processedRemote.map(r => r.id).filter(Boolean));
+          const localOnly = (this.data[tk] || []).filter(l => 
+            l && l.id && !remoteIdSet.has(l.id) && !deletedSet.has(l.id) && !deletedSet.has(l.docNumber) && !deletedSet.has(l.poNumber)
+          );
+
+          this.data[tk] = [...processedRemote, ...localOnly];
         }
       });
 
