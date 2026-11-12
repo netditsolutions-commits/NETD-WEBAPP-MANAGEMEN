@@ -555,15 +555,22 @@ class DatabaseManager {
 
   scheduleCloudSync() {
     if (this._syncTimer) clearTimeout(this._syncTimer);
-    this._syncTimer = setTimeout(() => {
-      if (navigator.onLine) {
-        if (this.getSupabaseClient()) {
-          this.pushAllToSupabase().catch(() => {});
-        } else if (this.getWorkerUrl()) {
-          this.syncWithCloudflareD1().catch(() => {});
+    this._syncTimer = setTimeout(async () => {
+      if (navigator.onLine && !this._isSyncing) {
+        this._isSyncing = true;
+        try {
+          if (this.getSupabaseClient()) {
+            await this.pushAllToSupabase();
+          } else if (this.getWorkerUrl()) {
+            await this.syncWithCloudflareD1();
+          }
+        } catch (e) {
+          console.warn('Auto cloud sync notice:', e.message);
+        } finally {
+          this._isSyncing = false;
         }
       }
-    }, 1000);
+    }, 1500);
   }
 
   async syncRecordToRemote(table, record) {

@@ -281,12 +281,12 @@ const App = {
       } catch (e) {}
     });
 
-    // 3. Continuous Auto-pull interval every 5 seconds as fallback
+    // 3. Continuous Auto-pull interval every 15 seconds for multi-device live sync
     setInterval(() => {
       if (navigator.onLine) {
         this.pullLatestDataQuietly();
       }
-    }, 5000);
+    }, 15000);
 
     // 4. Auto-pull whenever user switches or clicks on this browser tab (Focus sync)
     window.addEventListener('focus', () => {
@@ -306,7 +306,8 @@ const App = {
   },
 
   async pullLatestDataQuietly() {
-    if (!navigator.onLine || !window.db) return;
+    if (!navigator.onLine || !window.db || this._isPullingQuietly) return;
+    this._isPullingQuietly = true;
     try {
       if (window.db.getSupabaseClient()) {
         await window.db.pullFromSupabaseQuietly();
@@ -319,6 +320,8 @@ const App = {
       }
     } catch (e) {
       // quiet catch
+    } finally {
+      this._isPullingQuietly = false;
     }
   },
 
@@ -7715,13 +7718,19 @@ const App = {
     const netMonthBalance = totalMonthIncome - totalMonthExpense;
 
     // Filter by active tab (income or expense)
+    this.txCategory = this.txCategory || 'all';
     let tabTxs = monthTxs.filter(t => t.type === this.txTab);
+    if (this.txCategory && this.txCategory !== 'all') {
+      tabTxs = tabTxs.filter(t => t.category === this.txCategory);
+    }
     if (this.txSearchQuery) {
       const q = this.txSearchQuery.trim().toLowerCase();
       tabTxs = tabTxs.filter(t => 
         (t.description || '').toLowerCase().includes(q) ||
         (t.refDoc || '').toLowerCase().includes(q) ||
         (t.notes || '').toLowerCase().includes(q) ||
+        (t.category || '').toLowerCase().includes(q) ||
+        this.formatTxCategory(t.category).toLowerCase().includes(q) ||
         (t.paymentMethod || '').toLowerCase().includes(q) ||
         (t.date || '').includes(q) ||
         String(t.amount || '').includes(q)
@@ -7846,6 +7855,27 @@ const App = {
                 </select>
               </div>
 
+              <!-- Category Filter Dropdown -->
+              <div class="flex items-center gap-1.5">
+                <label class="text-xs font-bold text-amber-400 shrink-0"><i class="fa-solid fa-tags mr-1"></i>ໝວດໝູ່:</label>
+                <select onchange="App.setTxCategory(this.value)" class="glass-input py-1.5 px-2.5 text-xs font-bold">
+                  <option value="all" ${this.txCategory === 'all' ? 'selected' : ''}>-- ທຸກໝວດໝູ່ (All) --</option>
+                  ${this.txTab === 'income' ? `
+                    <option value="pos_sale" ${this.txCategory === 'pos_sale' ? 'selected' : ''}>🛍️ ບິນຂາຍໜ້າຮ້ານ (POS)</option>
+                    <option value="product_sale" ${this.txCategory === 'product_sale' ? 'selected' : ''}>📦 ຂາຍສິນຄ້າ (Invoice)</option>
+                    <option value="service_fee" ${this.txCategory === 'service_fee' ? 'selected' : ''}>🛠️ ຄ່າບໍລິການ (Service)</option>
+                    <option value="project_income" ${this.txCategory === 'project_income' ? 'selected' : ''}>📊 ລາຍຮັບໂຄງການ (Project)</option>
+                    <option value="other" ${this.txCategory === 'other' ? 'selected' : ''}>🔖 ອື່ນໆ</option>
+                  ` : `
+                    <option value="stock_purchase" ${this.txCategory === 'stock_purchase' ? 'selected' : ''}>🛒 ສັ່ງຊື້ສິນຄ້າ (PO)</option>
+                    <option value="shipping_cost" ${this.txCategory === 'shipping_cost' ? 'selected' : ''}>🚚 ຄ່າຂົນສົ່ງ</option>
+                    <option value="salary" ${this.txCategory === 'salary' ? 'selected' : ''}>👥 ເງິນເດືອນພະນັກງານ</option>
+                    <option value="utility" ${this.txCategory === 'utility' ? 'selected' : ''}>💡 ຄ່ານ້ຳ-ຄ່າໄຟ</option>
+                    <option value="other" ${this.txCategory === 'other' ? 'selected' : ''}>🔖 ອື່ນໆ</option>
+                  `}
+                </select>
+              </div>
+
               <!-- Search Bar -->
               <div class="relative w-full sm:w-64">
                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 opacity-60 text-xs"></i>
@@ -7904,7 +7934,7 @@ const App = {
                         </button>
                       ` : '<span class="opacity-40">-</span>'}
                     </td>
-                    <td class="text-xs">${t.paymentMethod || 'ເງີນໂອນ (Transfer)'}</td>
+                    <td class="text-xs whitespace-nowrap">${this.formatPaymentMethod(t.paymentMethod)}</td>
                     <td class="text-right font-black font-mono ${t.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}">
                       ${t.type === 'income' ? '+' : '-'}${Number(t.amount || 0).toLocaleString()} ₭
                     </td>
@@ -8115,6 +8145,13 @@ const App = {
 
   setTxTab(tab) {
     this.txTab = tab;
+    this.txCategory = 'all';
+    this.txPage = 1;
+    this.renderCurrentView();
+  },
+
+  setTxCategory(cat) {
+    this.txCategory = cat;
     this.txPage = 1;
     this.renderCurrentView();
   },
@@ -8138,6 +8175,13 @@ const App = {
       other: 'ອື່ນໆ'
     };
     return map[cat] || cat || 'ທົ່ວໄປ';
+  },
+
+  formatPaymentMethod(pm) {
+    if (!pm) return '💳 ເງີນໂອນ (Transfer)';
+    if (pm === 'cash' || pm === 'ເງິນສົດ' || pm === 'ເງິນສົດ (Cash)') return '💵 ເງິນສົດ (Cash)';
+    if (pm === 'transfer' || pm === 'bcel_one' || pm === 'BCEL One QR' || pm === 'ໂອນຜ່ານທະນາຄານ' || pm === 'ເງີນໂອນ' || pm === 'ເງີນໂອນ (Transfer)') return '💳 ເງີນໂອນ (Transfer)';
+    return pm;
   },
 
   deleteTransaction(id) {
