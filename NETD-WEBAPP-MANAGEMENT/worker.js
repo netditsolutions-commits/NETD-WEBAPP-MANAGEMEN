@@ -360,12 +360,16 @@ export default {
           if (!row.id) row.id = "row_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
 
           if (targetTable === "documents") {
-            if (!row.type) row.type = rawRow.docType || rawRow.type || 'quotation';
+            if (!row.type) row.type = rawRow.docType || rawRow.type || 'pos';
             if (!row.doc_type) row.doc_type = row.type;
-            if (!row.customer_name) row.customer_name = rawRow.customerName || (rawRow.supplierName || 'ລູກຄ້າ');
-            if (!row.total_amount && (rawRow.grandTotal !== undefined || rawRow.totalAmount !== undefined)) {
-              row.total_amount = rawRow.grandTotal !== undefined ? rawRow.grandTotal : rawRow.totalAmount;
-            }
+            if (!row.customer_id) row.customer_id = rawRow.customerId || rawRow.customer_id || 'cust_walk_in';
+            if (!row.customer_name) row.customer_name = rawRow.customerName || rawRow.customer_name || (rawRow.supplierName || 'ລູກຄ້າທົ່ວໄປ');
+            if (!row.doc_number) row.doc_number = rawRow.docNumber || rawRow.doc_number || ('DOC-' + row.id);
+            if (!row.date) row.date = rawRow.date || new Date().toISOString().substring(0, 10);
+            if (row.subtotal === undefined) row.subtotal = rawRow.subtotal !== undefined ? rawRow.subtotal : (rawRow.grandTotal || 0);
+            if (row.grand_total === undefined) row.grand_total = rawRow.grandTotal !== undefined ? rawRow.grandTotal : (rawRow.totalAmount || row.subtotal || 0);
+            if (row.total_amount === undefined) row.total_amount = row.grand_total;
+            if (row.status === undefined) row.status = rawRow.status || 'paid';
             if (rawRow.items && (!row.items_json || row.items_json === 'null')) {
               row.items_json = JSON.stringify(rawRow.items);
             }
@@ -464,13 +468,16 @@ export default {
 
             // Safe field fallbacks & mappings
             if (table === "documents") {
-              if (!row.type) row.type = rawRow.docType || rawRow.type || 'quotation';
+              if (!row.type) row.type = rawRow.docType || rawRow.type || 'pos';
               if (!row.doc_type) row.doc_type = row.type;
-              if (!row.customer_name) row.customer_name = rawRow.customerName || (rawRow.supplierName || 'ລູກຄ້າ');
-              if (!row.doc_number) row.doc_number = rawRow.docNumber || ('DOC-' + row.id);
+              if (!row.customer_id) row.customer_id = rawRow.customerId || rawRow.customer_id || 'cust_walk_in';
+              if (!row.customer_name) row.customer_name = rawRow.customerName || rawRow.customer_name || (rawRow.supplierName || 'ລູກຄ້າທົ່ວໄປ');
+              if (!row.doc_number) row.doc_number = rawRow.docNumber || rawRow.doc_number || ('DOC-' + row.id);
               if (!row.date) row.date = rawRow.date || new Date().toISOString().substring(0, 10);
-              if (row.total_amount === undefined) row.total_amount = rawRow.grandTotal !== undefined ? rawRow.grandTotal : (rawRow.totalAmount || 0);
-              if (row.grand_total === undefined) row.grand_total = row.total_amount;
+              if (row.subtotal === undefined) row.subtotal = rawRow.subtotal !== undefined ? rawRow.subtotal : (rawRow.grandTotal || 0);
+              if (row.grand_total === undefined) row.grand_total = rawRow.grandTotal !== undefined ? rawRow.grandTotal : (rawRow.totalAmount || row.subtotal || 0);
+              if (row.total_amount === undefined) row.total_amount = row.grand_total;
+              if (row.status === undefined) row.status = rawRow.status || 'paid';
               if (row.discount_amount === undefined) row.discount_amount = rawRow.discount !== undefined ? rawRow.discount : (rawRow.discountAmount || 0);
               if (rawRow.items && !row.items_json) row.items_json = JSON.stringify(rawRow.items);
             }
