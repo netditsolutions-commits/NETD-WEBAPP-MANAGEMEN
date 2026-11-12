@@ -1632,8 +1632,19 @@ class DatabaseManager {
   }
 
   addDocument(doc) {
-    doc.id = 'doc_' + Date.now();
+    if (!doc.id) doc.id = 'doc_' + Date.now();
+    doc.type = doc.type || doc.docType || 'pos';
+    doc.docType = doc.docType || doc.type || 'pos';
+    doc.customerId = doc.customerId || doc.customer_id || 'cust_walk_in';
+    doc.customerName = doc.customerName || doc.customer_name || 'ລູກຄ້າທົ່ວໄປ';
+    doc.subtotal = doc.subtotal !== undefined ? doc.subtotal : (doc.grandTotal || 0);
+    doc.grandTotal = doc.grandTotal !== undefined ? doc.grandTotal : (doc.subtotal || 0);
+    doc.totalAmount = doc.totalAmount !== undefined ? doc.totalAmount : doc.grandTotal;
+    doc.date = doc.date || new Date().toISOString().split('T')[0];
+    doc.status = doc.status || 'paid';
+
     this.data.documents.unshift(doc);
+    this.saveLocal();
     
     // Automatically record income transaction ONLY IF status is paid
     if (doc.status === 'paid' && (doc.docType === 'invoice' || doc.docType === 'pos')) {
@@ -2492,8 +2503,47 @@ class DatabaseManager {
             return item;
           }).filter(item => item && !deletedSet.has(item.id) && !deletedSet.has(item.docNumber) && !deletedSet.has(item.poNumber));
 
-          // Cloudflare D1 is the single source of truth across all devices
-          this.data[tk] = processedRemote;
+          // Safe non-destructive bi-directional merge:
+          // Remote records update existing or add new ones
+          const remoteIds = new Set();
+          const remoteDocNums = new Set();
+          const mergedList = [];
+
+          processedRemote.forEach(rem => {
+            if (rem && rem.id) {
+              remoteIds.add(rem.id);
+              if (rem.docNumber) remoteDocNums.add(rem.docNumber);
+              if (rem.poNumber) remoteDocNums.add(rem.poNumber);
+              mergedList.push(rem);
+            }
+          });
+
+          // Preserve any local items that are NOT deleted and not yet present in D1 (e.g. freshly created POS bills)
+          let hasUnsyncedLocal = false;
+          if (Array.isArray(this.data[tk])) {
+            this.data[tk].forEach(loc => {
+              if (!loc || !loc.id) return;
+              if (deletedSet.has(loc.id)) return;
+              if (loc.docNumber && deletedSet.has(loc.docNumber)) return;
+              if (loc.poNumber && deletedSet.has(loc.poNumber)) return;
+
+              const isDuplicate = remoteIds.has(loc.id) || 
+                                  (loc.docNumber && remoteDocNums.has(loc.docNumber)) || 
+                                  (loc.poNumber && remoteDocNums.has(loc.poNumber));
+              if (!isDuplicate) {
+                mergedList.unshift(loc);
+                remoteIds.add(loc.id);
+                if (loc.docNumber) remoteDocNums.add(loc.docNumber);
+                if (loc.poNumber) remoteDocNums.add(loc.poNumber);
+                hasUnsyncedLocal = true;
+              }
+            });
+          }
+
+          this.data[tk] = mergedList;
+          if (hasUnsyncedLocal) {
+            this.scheduleCloudSync();
+          }
         }
       });
 

@@ -5810,12 +5810,16 @@ const App = {
         const notes = document.getElementById('pos-notes')?.value?.trim() || '';
 
         return {
+          id: 'doc_' + Date.now(),
           docNumber,
           docType: 'pos',
-          customerName,
+          type: 'pos',
+          customerId: 'cust_walk_in',
+          customerName: customerName || 'ລູກຄ້າທົ່ວໄປ',
           date: new Date().toISOString().split('T')[0],
           grandTotal: total,
           subtotal: total,
+          totalAmount: total,
           cashReceived: cashGiven,
           change: Math.max(0, cashGiven - total),
           status,
@@ -5829,26 +5833,18 @@ const App = {
       if (res.isConfirmed && res.value) {
         const newDoc = window.db.addDocument(res.value);
 
-        // Record income transaction automatically if paid
-        if (res.value.status === 'paid') {
-          window.db.addTransaction({
-            date: res.value.date,
-            type: 'income',
-            category: 'pos_sale',
-            amount: res.value.grandTotal,
-            refDoc: res.value.docNumber,
-            description: `ບິນຂາຍໜ້າຮ້ານ POS: ${res.value.docNumber}`,
-            paymentMethod: res.value.paymentMethod
+        // Deduct inventory stock for sold products (multi-qty & both SN and non-SN)
+        if (Array.isArray(res.value.items)) {
+          res.value.items.forEach(it => {
+            if (it.productId) {
+              const qty = it.qty || 1;
+              window.db.deductProductStock(it.productId, qty, res.value.docNumber);
+            }
           });
         }
 
-        // Deduct inventory stock for sold products (multi-qty & both SN and non-SN)
-        res.value.items.forEach(it => {
-          if (it.productId) {
-            const qty = it.qty || 1;
-            window.db.deductProductStock(it.productId, qty, res.value.docNumber);
-          }
-        });
+        // Immediately refresh current view so the new POS document appears right away
+        this.renderCurrentView();
 
         Swal.fire({
           title: 'ຂາຍສຳເລັດ!',
