@@ -313,20 +313,9 @@ export default {
         }
       };
 
-      // Cache actual table columns per request to eliminate any risk of invalid column errors
-      const actualColsCache = {};
-      const getActualCols = async (tbl) => {
-        if (actualColsCache[tbl]) return actualColsCache[tbl];
-        try {
-          const info = await db.prepare(`PRAGMA table_info(${tbl})`).all();
-          const names = (info.results || []).map(r => r.name);
-          if (names.length > 0) {
-            actualColsCache[tbl] = new Set(names);
-            return actualColsCache[tbl];
-          }
-        } catch (e) {}
-        actualColsCache[tbl] = new Set(VALID_COLUMNS[tbl] || []);
-        return actualColsCache[tbl];
+      // Fast 0-subrequest column validator: uses static VALID_COLUMNS to protect Cloudflare 50-subrequest quota
+      const getActualCols = (tbl) => {
+        return new Set(VALID_COLUMNS[tbl] || []);
       };
 
       // Helper: get valid column names synchronously from static cache (0 subrequests)
@@ -356,7 +345,7 @@ export default {
         };
         const targetTable = tableAliases[table] || camelToSnake(table);
 
-        const actualCols = await getActualCols(targetTable);
+        const actualCols = getActualCols(targetTable);
         if (!actualCols || actualCols.size === 0) {
           return json({ success: false, error: `Table '${targetTable}' does not exist in D1.` }, 400);
         }
@@ -415,16 +404,13 @@ export default {
         }
 
         if (stmts.length > 0) {
-          const chunkSize = 25;
+          const chunkSize = 50;
           for (let i = 0; i < stmts.length; i += chunkSize) {
             const chunk = stmts.slice(i, i + chunkSize);
             try {
               await db.batch(chunk);
             } catch (batchErr) {
               console.warn(`Batch execution warning at chunk ${i} for ${targetTable}:`, batchErr.message);
-              for (const s of chunk) {
-                try { await s.run(); } catch (singleErr) {}
-              }
             }
           }
         }
@@ -465,7 +451,7 @@ export default {
 
         for (const [table, rows] of Object.entries(tableMap)) {
           if (!rows || rows.length === 0) continue;
-          const actualCols = await getActualCols(table);
+          const actualCols = getActualCols(table);
           if (!actualCols || actualCols.size === 0) continue;
 
           for (const rawRow of rows) {
@@ -578,18 +564,15 @@ export default {
           }
         }
 
-        // Execute all collected statements in chunks of 25 (uses minimal subrequests, never loops on fail)
+        // Execute all collected statements in chunks of 50 (uses minimal subrequests, never loops on fail)
         if (allStmts.length > 0) {
-          const chunkSize = 25;
+          const chunkSize = 50;
           for (let i = 0; i < allStmts.length; i += chunkSize) {
             const chunk = allStmts.slice(i, i + chunkSize);
             try {
               await db.batch(chunk);
             } catch (batchErr) {
               console.warn(`Batch execution warning at chunk ${i}:`, batchErr.message);
-              for (const s of chunk) {
-                try { await s.run(); } catch (singleErr) {}
-              }
             }
           }
         }
