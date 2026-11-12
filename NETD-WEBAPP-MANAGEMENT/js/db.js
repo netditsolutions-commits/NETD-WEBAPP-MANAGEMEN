@@ -497,6 +497,26 @@ function sortByNewest(list) {
   });
 }
 
+function hasTableDataChanged(prevList, nextList) {
+  if (!Array.isArray(prevList) || !Array.isArray(nextList)) return true;
+  if (prevList.length !== nextList.length) return true;
+  for (let i = 0; i < prevList.length; i++) {
+    const a = prevList[i];
+    const b = nextList[i];
+    if (!a || !b) return true;
+    if (a.id !== b.id) return true;
+    if (a.status !== b.status) return true;
+    const valA = Number(a.grandTotal !== undefined ? a.grandTotal : (a.amount !== undefined ? a.amount : (a.salePrice !== undefined ? a.salePrice : (a.totalAmount !== undefined ? a.totalAmount : 0))));
+    const valB = Number(b.grandTotal !== undefined ? b.grandTotal : (b.amount !== undefined ? b.amount : (b.salePrice !== undefined ? b.salePrice : (b.totalAmount !== undefined ? b.totalAmount : 0))));
+    if (valA !== valB) return true;
+    if ((a.date || a.orderDate || '') !== (b.date || b.orderDate || '')) return true;
+    if ((a.customerName || a.supplierName || a.name || '') !== (b.customerName || b.supplierName || b.name || '')) return true;
+    if ((a.stock !== undefined ? a.stock : -1) !== (b.stock !== undefined ? b.stock : -1)) return true;
+    if ((a.profit !== undefined ? a.profit : -1) !== (b.profit !== undefined ? b.profit : -1)) return true;
+  }
+  return false;
+}
+
 function safeMergeRecords(currentLocalList, remoteList, deletedSet) {
   const remoteIds = new Set();
   const remoteDocNums = new Set();
@@ -1167,7 +1187,7 @@ class DatabaseManager {
             });
           }
 
-          if (JSON.stringify(prevLocal) !== JSON.stringify(merged)) {
+          if (hasTableDataChanged(prevLocal, merged)) {
             anyChanged = true;
           }
 
@@ -1984,10 +2004,33 @@ class DatabaseManager {
     if (doc.status === 'paid' && (doc.docType === 'invoice' || doc.docType === 'pos')) {
       const exists = this.data.transactions.some(t => t.refDoc === doc.docNumber);
       if (!exists) {
+        let initialProfit = 0;
+        if (Array.isArray(doc.items) && doc.items.length > 0) {
+          doc.items.forEach(it => {
+            const qty = Number(it.quantity || it.qty || 1);
+            const price = Number(it.unitPrice || it.price || 0);
+            let cost = Number(it.costPrice || it.cost || 0);
+            if (cost === 0 && it.productId) {
+              const p = (this.data.products || []).find(prod => prod.id === it.productId);
+              if (p && Number(p.costPrice || p.cost || 0) > 0) {
+                cost = Number(p.costPrice || p.cost || 0);
+              }
+            }
+            if (cost === 0 && price > 0) {
+              cost = price * 0.75;
+            }
+            initialProfit += (price - cost) * qty;
+          });
+        }
+        if (initialProfit <= 0 && (doc.grandTotal || doc.totalAmount)) {
+          initialProfit = Math.round(Number(doc.grandTotal || doc.totalAmount || 0) * 0.25);
+        }
+
         this.addTransaction({
           type: 'income',
           category: doc.docType === 'pos' ? 'pos_sale' : 'product_sale',
           amount: doc.grandTotal || doc.totalAmount || 0,
+          profit: Math.round(initialProfit),
           date: doc.date,
           refDoc: doc.docNumber,
           description: doc.docType === 'pos' ? `ບິນຂາຍໜ້າຮ້ານ POS: ${doc.docNumber}` : `ຮັບເງິນຕາມໃບເກັບເງິນ ${doc.docNumber} (${doc.customerName})`,
@@ -2013,17 +2056,42 @@ class DatabaseManager {
       // Auto-sync income transaction strictly based on paid status
       if (doc.docType === 'invoice' || doc.docType === 'pos') {
         if (doc.status === 'paid') {
+          let calcProfit = 0;
+          if (Array.isArray(doc.items) && doc.items.length > 0) {
+            doc.items.forEach(it => {
+              const qty = Number(it.quantity || it.qty || 1);
+              const price = Number(it.unitPrice || it.price || 0);
+              let cost = Number(it.costPrice || it.cost || 0);
+              if (cost === 0 && it.productId) {
+                const p = (this.data.products || []).find(prod => prod.id === it.productId);
+                if (p && Number(p.costPrice || p.cost || 0) > 0) {
+                  cost = Number(p.costPrice || p.cost || 0);
+                }
+              }
+              if (cost === 0 && price > 0) {
+                cost = price * 0.75;
+              }
+              calcProfit += (price - cost) * qty;
+            });
+          }
+          if (calcProfit <= 0 && (doc.grandTotal || doc.totalAmount)) {
+            calcProfit = Math.round(Number(doc.grandTotal || doc.totalAmount || 0) * 0.25);
+          }
+
           const tx = this.data.transactions.find(t => t.refDoc === doc.docNumber);
           if (tx) {
             tx.amount = doc.grandTotal || doc.totalAmount || tx.amount;
+            tx.profit = Math.round(calcProfit);
             tx.date = doc.date || tx.date;
             if (doc.notes) tx.notes = doc.notes;
             if (doc.paymentMethod) tx.paymentMethod = doc.paymentMethod;
+            this.syncRecordToRemote('transactions', tx);
           } else {
             this.addTransaction({
               type: 'income',
               category: doc.docType === 'pos' ? 'pos_sale' : 'product_sale',
               amount: doc.grandTotal || doc.totalAmount || 0,
+              profit: Math.round(calcProfit),
               date: doc.date,
               refDoc: doc.docNumber,
               description: doc.docType === 'pos' ? `ບິນຂາຍໜ້າຮ້ານ POS: ${doc.docNumber}` : `ຮັບເງິນຕາມໃບເກັບເງິນ ${doc.docNumber} (${doc.customerName})`,

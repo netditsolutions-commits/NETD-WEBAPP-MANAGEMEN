@@ -281,22 +281,26 @@ const App = {
       } catch (e) {}
     });
 
-    // 3. Continuous Auto-pull interval every 15 seconds for multi-device live sync
+    // 3. Continuous Auto-pull interval every 60 seconds (Supabase Realtime handles instant events via WebSocket)
     setInterval(() => {
       if (navigator.onLine) {
         this.pullLatestDataQuietly();
       }
-    }, 15000);
+    }, 60000);
 
-    // 4. Auto-pull whenever user switches or clicks on this browser tab (Focus sync)
-    window.addEventListener('focus', () => {
-      if (navigator.onLine) {
+    // 4. Auto-pull whenever user switches or clicks on this browser tab (Focus sync, throttled to 30s)
+    let lastFocusPullTime = 0;
+    const throttledFocusPull = () => {
+      const now = Date.now();
+      if (now - lastFocusPullTime > 30000 && navigator.onLine) {
+        lastFocusPullTime = now;
         this.pullLatestDataQuietly();
       }
-    });
+    };
+    window.addEventListener('focus', throttledFocusPull);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && navigator.onLine) {
-        this.pullLatestDataQuietly();
+      if (document.visibilityState === 'visible') {
+        throttledFocusPull();
       }
     });
 
@@ -5457,11 +5461,15 @@ const App = {
       subtotal += it.total;
       return `
         <tr class="border-b border-white/5">
-          <td class="py-1">${it.name}</td>
-          <td class="text-center py-1">${it.qty}</td>
-          <td class="text-right py-1">${it.unitPrice.toLocaleString()}</td>
-          <td class="text-right font-bold text-emerald-400 py-1">${it.total.toLocaleString()}</td>
-          <td class="text-right"><button onclick="App.removeInvoiceItemRow(${i})" class="text-rose-400"><i class="fa-solid fa-xmark"></i></button></td>
+          <td class="py-1 font-medium text-xs">${it.name}</td>
+          <td class="text-center py-1">
+            <input type="number" min="1" value="${it.qty}" onchange="App.changeInvoiceQty(${i}, this.value)" class="glass-input text-center py-0.5 px-1 w-14 text-xs font-mono font-bold">
+          </td>
+          <td class="text-right py-1">
+            <input type="number" min="0" step="500" value="${it.unitPrice}" onchange="App.changeInvoiceUnitPrice(${i}, this.value)" class="glass-input text-right py-0.5 px-1.5 w-24 text-xs font-mono font-bold text-emerald-300">
+          </td>
+          <td class="text-right font-bold text-emerald-400 py-1 font-mono">${it.total.toLocaleString()}</td>
+          <td class="text-right"><button onclick="App.removeInvoiceItemRow(${i})" class="text-rose-400 hover:text-rose-300"><i class="fa-solid fa-xmark"></i></button></td>
         </tr>
       `;
     }).join('');
@@ -5469,6 +5477,22 @@ const App = {
     const discount = parseFloat(document.getElementById('inv-discount')?.value || '0');
     const grandTotal = Math.max(0, subtotal - discount);
     if (totalEl) totalEl.textContent = grandTotal.toLocaleString() + ' ₭';
+  },
+
+  changeInvoiceQty(idx, newQty) {
+    if (!window._invoiceItems || !window._invoiceItems[idx]) return;
+    const qty = Math.max(1, parseInt(newQty, 10) || 1);
+    window._invoiceItems[idx].qty = qty;
+    window._invoiceItems[idx].total = qty * window._invoiceItems[idx].unitPrice;
+    this.updateInvoiceItemsUI();
+  },
+
+  changeInvoiceUnitPrice(idx, newPrice) {
+    if (!window._invoiceItems || !window._invoiceItems[idx]) return;
+    const price = Math.max(0, parseFloat(newPrice) || 0);
+    window._invoiceItems[idx].unitPrice = price;
+    window._invoiceItems[idx].total = window._invoiceItems[idx].qty * price;
+    this.updateInvoiceItemsUI();
   },
 
   removeInvoiceItemRow(index) {
@@ -6143,21 +6167,31 @@ const App = {
       subtotal += it.total;
       return `
         <tr class="border-b border-white/5">
-          <td class="py-1 font-bold">${it.name}</td>
+          <td class="py-1 font-bold text-xs">${it.name}</td>
           <td class="text-center py-1">
             <button onclick="App.changePosQty(${i}, -1)" class="px-1 text-slate-400 hover:text-white">-</button>
-            <span class="px-1.5 font-bold">${it.qty}</span>
+            <span class="px-1 font-mono font-bold">${it.qty}</span>
             <button onclick="App.changePosQty(${i}, 1)" class="px-1 text-slate-400 hover:text-white">+</button>
           </td>
-          <td class="text-right py-1">${it.unitPrice.toLocaleString()}</td>
-          <td class="text-right font-bold text-amber-400 py-1">${it.total.toLocaleString()}</td>
-          <td class="text-right"><button onclick="App.removePosCartItem(${i})" class="text-rose-400"><i class="fa-solid fa-xmark"></i></button></td>
+          <td class="text-right py-1">
+            <input type="number" min="0" step="500" value="${it.unitPrice}" onchange="App.changePosUnitPrice(${i}, this.value)" class="glass-input text-right py-0.5 px-1 w-24 text-xs font-mono font-bold text-amber-300">
+          </td>
+          <td class="text-right font-bold text-amber-400 py-1 font-mono">${it.total.toLocaleString()}</td>
+          <td class="text-right"><button onclick="App.removePosCartItem(${i})" class="text-rose-400 hover:text-rose-300"><i class="fa-solid fa-xmark"></i></button></td>
         </tr>
       `;
     }).join('');
 
     if (totalDisplay) totalDisplay.textContent = subtotal.toLocaleString() + ' ₭';
     this.calculatePosChange();
+  },
+
+  changePosUnitPrice(idx, newPrice) {
+    if (!window._posCart || !window._posCart[idx]) return;
+    const price = Math.max(0, parseFloat(newPrice) || 0);
+    window._posCart[idx].unitPrice = price;
+    window._posCart[idx].total = window._posCart[idx].qty * price;
+    this.updatePosCartUI();
   },
 
   changePosQty(idx, delta) {
@@ -6478,16 +6512,37 @@ const App = {
       <tr class="border-b border-white/5">
         <td class="py-1">
           <span class="badge-glass-cyan text-[10px] font-mono px-1 py-0.5 rounded mr-1">${it.sku || ''}</span>
-          <span class="font-bold">${it.productName || it.name}</span>
+          <span class="font-bold text-xs">${it.productName || it.name}</span>
         </td>
-        <td class="text-center py-1 font-bold">${it.qty}</td>
-        <td class="text-right py-1 text-amber-400 font-mono">${it.unitCost.toLocaleString()} ₭</td>
+        <td class="text-center py-1">
+          <input type="number" min="1" value="${it.qty}" onchange="App.changePOItemQty(${i}, this.value)" class="glass-input text-center py-0.5 px-1 w-14 text-xs font-mono font-bold">
+        </td>
+        <td class="text-right py-1">
+          <input type="number" min="0" step="500" value="${it.unitCost}" onchange="App.changePOItemCost(${i}, this.value)" class="glass-input text-right py-0.5 px-1.5 w-24 text-xs font-mono font-bold text-amber-300">
+        </td>
         <td class="text-right py-1 font-black text-indigo-400 font-mono">${it.total.toLocaleString()} ₭</td>
         <td class="text-right"><button type="button" onclick="App.removePOItemRow(${i})" class="text-rose-400 hover:text-rose-300 p-0.5"><i class="fa-solid fa-xmark"></i></button></td>
       </tr>
     `).join('');
 
     this.calcPoGrandTotal();
+  },
+
+  changePOItemQty(idx, newQty) {
+    if (!window._poItems || !window._poItems[idx]) return;
+    const qty = Math.max(1, parseInt(newQty, 10) || 1);
+    window._poItems[idx].qty = qty;
+    window._poItems[idx].total = qty * window._poItems[idx].unitCost;
+    this.updatePOItemsUI();
+  },
+
+  changePOItemCost(idx, newCost) {
+    if (!window._poItems || !window._poItems[idx]) return;
+    const cost = Math.max(0, parseFloat(newCost) || 0);
+    window._poItems[idx].unitCost = cost;
+    window._poItems[idx].unitPrice = cost;
+    window._poItems[idx].total = window._poItems[idx].qty * cost;
+    this.updatePOItemsUI();
   },
 
   removePOItemRow(index) {
@@ -6906,11 +6961,15 @@ const App = {
       subtotal += it.total;
       return `
         <tr class="border-b border-white/5">
-          <td class="py-1">${it.name}</td>
-          <td class="text-center py-1">${it.qty}</td>
-          <td class="text-right py-1">${it.unitPrice.toLocaleString()}</td>
-          <td class="text-right font-bold text-sky-400 py-1">${it.total.toLocaleString()}</td>
-          <td class="text-right"><button onclick="App.removeMultiItemRow(${i})" class="text-rose-400"><i class="fa-solid fa-xmark"></i></button></td>
+          <td class="py-1 font-medium text-xs">${it.name}</td>
+          <td class="text-center py-1">
+            <input type="number" min="1" value="${it.qty}" onchange="App.changeQuotationQty(${i}, this.value)" class="glass-input text-center py-0.5 px-1 w-14 text-xs font-mono font-bold">
+          </td>
+          <td class="text-right py-1">
+            <input type="number" min="0" step="500" value="${it.unitPrice}" onchange="App.changeQuotationUnitPrice(${i}, this.value)" class="glass-input text-right py-0.5 px-1 w-24 text-xs font-mono font-bold text-sky-300">
+          </td>
+          <td class="text-right font-bold text-sky-400 py-1 font-mono">${it.total.toLocaleString()}</td>
+          <td class="text-right"><button onclick="App.removeMultiItemRow(${i})" class="text-rose-400 hover:text-rose-300"><i class="fa-solid fa-xmark"></i></button></td>
         </tr>
       `;
     }).join('');
@@ -6918,6 +6977,22 @@ const App = {
     const discount = parseFloat(document.getElementById('mq-discount')?.value || '0');
     const grandTotal = Math.max(0, subtotal - discount);
     if (totalEl) totalEl.textContent = grandTotal.toLocaleString() + ' ₭';
+  },
+
+  changeQuotationQty(idx, newQty) {
+    if (!window._multiItems || !window._multiItems[idx]) return;
+    const qty = Math.max(1, parseInt(newQty, 10) || 1);
+    window._multiItems[idx].qty = qty;
+    window._multiItems[idx].total = qty * window._multiItems[idx].unitPrice;
+    this.updateMultiItemsUI();
+  },
+
+  changeQuotationUnitPrice(idx, newPrice) {
+    if (!window._multiItems || !window._multiItems[idx]) return;
+    const price = Math.max(0, parseFloat(newPrice) || 0);
+    window._multiItems[idx].unitPrice = price;
+    window._multiItems[idx].total = window._multiItems[idx].qty * price;
+    this.updateMultiItemsUI();
   },
 
   removeMultiItemRow(index) {
@@ -6930,6 +7005,8 @@ const App = {
   openEditDocumentModal(docId) {
     const d = window.db.getDocumentById(docId);
     if (!d) return;
+
+    window._editDocItems = JSON.parse(JSON.stringify(d.items || []));
 
     let statusOptionsHtml = '';
     if (d.docType === 'quotation') {
@@ -6971,13 +7048,16 @@ const App = {
       `;
     }
 
+    const hasItems = window._editDocItems && window._editDocItems.length > 0;
+
     Swal.fire({
       title: `ແກ້ໄຂເອກະສານ: ${d.docNumber}`,
+      width: hasItems ? '680px' : '520px',
       html: `
         <div class="space-y-3 text-left text-xs">
           <div>
-            <label class="block mb-1 font-bold">ຊື່ລູກຄ້າ</label>
-            <input type="text" id="edit-doc-cust" class="glass-input w-full font-bold" value="${d.customerName}">
+            <label class="block mb-1 font-bold">ຊື່ລູກຄ້າ / ຜູ້ຕິດຕໍ່</label>
+            <input type="text" id="edit-doc-cust" class="glass-input w-full font-bold" value="${d.customerName || ''}">
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
@@ -6991,9 +7071,50 @@ const App = {
               </select>
             </div>
           </div>
+
+          ${hasItems ? `
+            <div>
+              <label class="block mb-1 font-bold text-slate-200 flex items-center justify-between">
+                <span><i class="fa-solid fa-list-check text-sky-400 mr-1"></i>ລາຍການສິນຄ້າ (ແກ້ໄຂຈຳນວນ ແລະ ລາຄາຕໍ່ໜ່ວຍໄດ້)</span>
+                <span class="text-[10px] text-amber-300 font-normal">ປັບລາຄາໄດ້ທຸກລາຍການ</span>
+              </label>
+              <div class="max-h-48 overflow-y-auto border border-white/10 rounded-lg p-2 bg-slate-900/60 shadow-inner">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="border-b border-white/10 text-slate-400 text-[11px]">
+                      <th class="text-left pb-1 font-bold">ຊື່ສິນຄ້າ</th>
+                      <th class="text-center pb-1 font-bold w-16">ຈຳນວນ</th>
+                      <th class="text-right pb-1 font-bold w-28">ລາຄາ/ໜ່ວຍ (₭)</th>
+                      <th class="text-right pb-1 font-bold w-24">ລວມ (₭)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="edit-doc-items-tbody">
+                    ${window._editDocItems.map((it, idx) => {
+                      const qty = Number(it.qty || it.quantity || 1);
+                      const unitPrice = Number(it.unitPrice !== undefined ? it.unitPrice : (it.price !== undefined ? it.price : 0));
+                      const rowTotal = qty * unitPrice;
+                      return `
+                        <tr class="border-b border-white/5">
+                          <td class="py-1 font-medium text-xs">${it.name || it.productName || 'ສິນຄ້າ'}</td>
+                          <td class="text-center py-1">
+                            <input type="number" min="1" value="${qty}" onchange="App.changeEditDocItemQty(${idx}, this.value)" class="glass-input text-center py-0.5 px-1 w-14 text-xs font-mono font-bold">
+                          </td>
+                          <td class="text-right py-1">
+                            <input type="number" min="0" step="500" value="${unitPrice}" onchange="App.changeEditDocItemPrice(${idx}, this.value)" class="glass-input text-right py-0.5 px-1.5 w-24 text-xs font-mono font-bold text-amber-300">
+                          </td>
+                          <td class="text-right font-bold text-sky-400 py-1 font-mono">${rowTotal.toLocaleString()}</td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ` : ''}
+
           <div>
-            <label class="block mb-1 font-bold">ຍອດລວມ (₭)</label>
-            <input type="number" id="edit-doc-total" class="glass-input w-full font-bold text-sky-400" value="${d.grandTotal}">
+            <label class="block mb-1 font-bold">ຍອດລວມທັງໝົດ (Grand Total ₭)</label>
+            <input type="number" id="edit-doc-total" class="glass-input w-full font-bold text-sky-400 text-base" value="${d.grandTotal}">
           </div>
           <div>
             <label class="block mb-1 font-bold text-slate-200 flex items-center justify-between">
@@ -7006,21 +7127,79 @@ const App = {
       `,
       showCancelButton: true,
       confirmButtonText: 'ບັນທຶກ',
-      cancelButtonText: 'Cancel',
+      cancelButtonText: 'ຍົກເລີກ',
       customClass: { popup: 'swal-glass' },
-      preConfirm: () => ({
-        customerName: document.getElementById('edit-doc-cust')?.value,
-        date: document.getElementById('edit-doc-date')?.value,
-        status: document.getElementById('edit-doc-status')?.value,
-        grandTotal: parseFloat(document.getElementById('edit-doc-total')?.value || '0'),
-        notes: document.getElementById('edit-doc-notes')?.value?.trim() || ''
-      })
+      preConfirm: () => {
+        const grandTotal = parseFloat(document.getElementById('edit-doc-total')?.value || '0');
+        return {
+          customerName: document.getElementById('edit-doc-cust')?.value,
+          date: document.getElementById('edit-doc-date')?.value,
+          status: document.getElementById('edit-doc-status')?.value,
+          grandTotal: grandTotal,
+          totalAmount: grandTotal,
+          subtotal: grandTotal,
+          items: window._editDocItems && window._editDocItems.length > 0 ? window._editDocItems : (d.items || []),
+          notes: document.getElementById('edit-doc-notes')?.value?.trim() || ''
+        };
+      }
     }).then(res => {
       if (res.isConfirmed && res.value) {
         window.db.updateDocument(docId, res.value);
         this.renderCurrentView();
       }
     });
+  },
+
+  changeEditDocItemQty(idx, newQty) {
+    if (!window._editDocItems || !window._editDocItems[idx]) return;
+    const qty = Math.max(1, parseInt(newQty, 10) || 1);
+    window._editDocItems[idx].qty = qty;
+    window._editDocItems[idx].quantity = qty;
+    const price = Number(window._editDocItems[idx].unitPrice !== undefined ? window._editDocItems[idx].unitPrice : (window._editDocItems[idx].price || 0));
+    window._editDocItems[idx].total = qty * price;
+    this.recalcEditDocTotal();
+  },
+
+  changeEditDocItemPrice(idx, newPrice) {
+    if (!window._editDocItems || !window._editDocItems[idx]) return;
+    const price = Math.max(0, parseFloat(newPrice) || 0);
+    window._editDocItems[idx].unitPrice = price;
+    window._editDocItems[idx].price = price;
+    const qty = Number(window._editDocItems[idx].qty || window._editDocItems[idx].quantity || 1);
+    window._editDocItems[idx].total = qty * price;
+    this.recalcEditDocTotal();
+  },
+
+  recalcEditDocTotal() {
+    if (!window._editDocItems) return;
+    const tbody = document.getElementById('edit-doc-items-tbody');
+    const totalInput = document.getElementById('edit-doc-total');
+    let subtotal = 0;
+    if (tbody) {
+      tbody.innerHTML = window._editDocItems.map((it, idx) => {
+        const qty = Number(it.qty || it.quantity || 1);
+        const price = Number(it.unitPrice !== undefined ? it.unitPrice : (it.price !== undefined ? it.price : 0));
+        const itemTotal = qty * price;
+        subtotal += itemTotal;
+        return `
+          <tr class="border-b border-white/5">
+            <td class="py-1 font-medium text-xs">${it.name || it.productName || 'ສິນຄ້າ'}</td>
+            <td class="text-center py-1">
+              <input type="number" min="1" value="${qty}" onchange="App.changeEditDocItemQty(${idx}, this.value)" class="glass-input text-center py-0.5 px-1 w-14 text-xs font-mono font-bold">
+            </td>
+            <td class="text-right py-1">
+              <input type="number" min="0" step="500" value="${price}" onchange="App.changeEditDocItemPrice(${idx}, this.value)" class="glass-input text-right py-0.5 px-1.5 w-24 text-xs font-mono font-bold text-amber-300">
+            </td>
+            <td class="text-right font-bold text-sky-400 py-1 font-mono">${itemTotal.toLocaleString()}</td>
+          </tr>
+        `;
+      }).join('');
+    } else {
+      subtotal = window._editDocItems.reduce((acc, it) => acc + (Number(it.qty || it.quantity || 1) * Number(it.unitPrice !== undefined ? it.unitPrice : (it.price || 0))), 0);
+    }
+    if (totalInput) {
+      totalInput.value = subtotal;
+    }
   },
 
   deleteDocument(docId) {
@@ -8074,7 +8253,8 @@ const App = {
 
   getTransactionProfit(t) {
     if (t.type !== 'income') return 0;
-    if (t.profit !== undefined && t.profit !== null && t.profit !== '') {
+    // If profit is explicitly specified and > 0, return it
+    if (t.profit !== undefined && t.profit !== null && t.profit !== '' && Number(t.profit) > 0) {
       return Number(t.profit);
     }
 
@@ -8086,36 +8266,51 @@ const App = {
         let hasItemCost = false;
         doc.items.forEach(it => {
           const p = (it.productId && window.db.getProductById && window.db.getProductById(it.productId)) ||
-                    (window.db.getProducts && window.db.getProducts().find(pr => pr.sku === it.sku || pr.name === it.name));
-          if (p && p.costPrice !== undefined) {
-            totalCost += Number(p.costPrice) * Number(it.qty || 1);
+                    (window.db.getProducts && window.db.getProducts().find(pr => (pr.sku && it.sku && pr.sku === it.sku) || (pr.name && it.name && pr.name === it.name) || pr.id === it.productId));
+          const qty = Number(it.quantity || it.qty || 1);
+          let cost = 0;
+          if (p && p.costPrice !== undefined && Number(p.costPrice) > 0) {
+            cost = Number(p.costPrice);
             hasItemCost = true;
-          } else if (it.costPrice !== undefined) {
-            totalCost += Number(it.costPrice) * Number(it.qty || 1);
+          } else if (it.costPrice !== undefined && Number(it.costPrice) > 0) {
+            cost = Number(it.costPrice);
             hasItemCost = true;
+          } else if (it.cost !== undefined && Number(it.cost) > 0) {
+            cost = Number(it.cost);
+            hasItemCost = true;
+          } else {
+            const price = Number(it.unitPrice || it.price || 0);
+            if (price > 0) {
+              cost = price * 0.75;
+              hasItemCost = true;
+            }
           }
+          totalCost += cost * qty;
         });
-        if (hasItemCost) {
-          return Math.max(0, (Number(doc.grandTotal) || Number(t.amount)) - totalCost);
+        const docTotal = Number(doc.grandTotal || doc.totalAmount || t.amount || 0);
+        if (hasItemCost && totalCost > 0) {
+          const calc = Math.round(docTotal - totalCost);
+          return Math.max(0, calc > 0 ? calc : Math.round(docTotal * 0.25));
         }
+        return Math.max(0, Math.round(docTotal * 0.25));
       }
 
       // Check if project
       const proj = window.db.getProjects && window.db.getProjects().find(p => p.code === t.refDoc || p.id === t.refDoc);
       if (proj) {
-        if (proj.profit !== undefined) return Number(proj.profit);
+        if (proj.profit !== undefined && Number(proj.profit) > 0) return Number(proj.profit);
         if (proj.contractValue && proj.budget) return Math.max(0, Number(proj.contractValue) - Number(proj.budget));
       }
 
       // Check if IT service job
       const itJob = window.db.getItJobs && window.db.getItJobs().find(j => j.jobCode === t.refDoc || j.id === t.refDoc);
       if (itJob) {
-        return Number(itJob.serviceFee || t.amount);
+        return Number(itJob.serviceFee || t.amount || 0);
       }
     }
 
     // If cost is specified on transaction:
-    if (t.cost !== undefined && t.cost !== null) {
+    if (t.cost !== undefined && t.cost !== null && Number(t.cost) > 0) {
       return Math.max(0, Number(t.amount || 0) - Number(t.cost));
     }
 
