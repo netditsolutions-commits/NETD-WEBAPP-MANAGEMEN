@@ -40,6 +40,23 @@ const DEFAULT_DATABASE = {
 
   employees: [
     {
+      id: 'emp_00',
+      name: 'Mr. Chanh Xeng',
+      username: 'chanh',
+      password: 'p@ss4admin',
+      role: 'admin',
+      roleName: 'Admin (ເຈົ້າຂອງຮ້ານ)',
+      position: 'ເຈົ້າຂອງຮ້ານ (Owner & Founder)',
+      phone: '020 2920 4248',
+      email: 'chanhtsheej93@gmail.com',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      status: 'active',
+      joinedDate: '2026-11-01',
+      address: 'ນະຄອນຫຼວງວຽງຈັນ',
+      salary: 0,
+      notes: 'ເຈົ້າຂອງຮ້ານ ແລະ ຜູ້ບໍລິຫານສູງສຸດ'
+    },
+    {
       id: 'emp_01',
       name: 'ສົມສັກ ແກ້ວມະນີ',
       username: 'admin',
@@ -211,13 +228,13 @@ const DEFAULT_DATABASE = {
   ],
 
   brands: [
-    { id: 'br_hik', name: 'Hikvision', logoUrl: '', category: 'CCTV & Security', contact: 'Hikvision Laos Authorized', warranty: 'ຮັບປະກັນ 24 ເດືອນ' },
-    { id: 'br_dahua', name: 'Dahua Technology', logoUrl: '', category: 'CCTV & Security', contact: 'Dahua Partner Laos', warranty: 'ຮັບປະກັນ 24 ເດືອນ' },
-    { id: 'br_ubnt', name: 'Ubiquiti UniFi', logoUrl: '', category: 'Network & Wireless', contact: 'Ubiquiti Laos Official Partner', warranty: 'ຮັບປະກັນ 12 ເດືອນ' },
-    { id: 'br_cisco', name: 'Cisco Systems', logoUrl: '', category: 'Enterprise Network', contact: 'Cisco Distributor Indochina', warranty: 'ຮັບປະກັນ 3 ປີ' },
-    { id: 'br_mikrotik', name: 'MikroTik RouterBOARD', logoUrl: '', category: 'Routers & Switches', contact: 'MikroTik Certified Distributor', warranty: 'ຮັບປະກັນ 12 ເດືອນ' },
-    { id: 'br_dell', name: 'Dell Technologies', logoUrl: '', category: 'Server & PC', contact: 'Dell Laos ProSupport', warranty: 'ຮັບປະກັນ 3 ປີ' },
-    { id: 'br_sunmi', name: 'Sunmi POS', logoUrl: '', category: 'POS Systems', contact: 'Sunmi Southeast Asia', warranty: 'ຮັບປະກັນ 12 ເດືອນ' }
+    { id: 'br_hik', name: 'Hikvision', logoUrl: '', category: 'ລະບົບກ້ອງວົງຈອນປິດ (CCTV & Security)', contact: 'Hikvision Laos Authorized', warranty: 'ຮັບປະກັນ 24 ເດືອນ' },
+    { id: 'br_dahua', name: 'Dahua Technology', logoUrl: '', category: 'ລະບົບກ້ອງວົງຈອນປິດ (CCTV & Security)', contact: 'Dahua Partner Laos', warranty: 'ຮັບປະກັນ 24 ເດືອນ' },
+    { id: 'br_ubnt', name: 'Ubiquiti UniFi', logoUrl: '', category: 'ອຸປະກອນເຄືອຂ່າຍ (Network & WiFi)', contact: 'Ubiquiti Laos Official Partner', warranty: 'ຮັບປະກັນ 12 ເດືອນ' },
+    { id: 'br_cisco', name: 'Cisco Systems', logoUrl: '', category: 'ອຸປະກອນເຄືອຂ່າຍ (Network & WiFi)', contact: 'Cisco Distributor Indochina', warranty: 'ຮັບປະກັນ 3 ປີ' },
+    { id: 'br_mikrotik', name: 'MikroTik RouterBOARD', logoUrl: '', category: 'ອຸປະກອນເຄືອຂ່າຍ (Network & WiFi)', contact: 'MikroTik Certified Distributor', warranty: 'ຮັບປະກັນ 12 ເດືອນ' },
+    { id: 'br_dell', name: 'Dell Technologies', logoUrl: '', category: 'ເຄື່ອງຄອມພິວເຕີ ແລະ ເຊີເວີ (Computers & Servers)', contact: 'Dell Laos ProSupport', warranty: 'ຮັບປະກັນ 3 ປີ' },
+    { id: 'br_sunmi', name: 'Sunmi POS', logoUrl: '', category: 'ລະບົບຂາຍໜ້າຮ້ານ (POS & Peripherals)', contact: 'Sunmi Southeast Asia', warranty: 'ຮັບປະກັນ 12 ເດືອນ' }
   ],
 
   suppliers: [
@@ -459,6 +476,22 @@ class DatabaseManager {
           parsed.transactions = parsed.transactions.filter(t => t && !legacyMockIds.has(t.id) && !deletedSet.has(t.id));
         }
 
+        if (parsed.brands && Array.isArray(parsed.brands)) {
+          const brandCatMap = {
+            'CCTV & Security': 'ລະບົບກ້ອງວົງຈອນປິດ (CCTV & Security)',
+            'Network & Wireless': 'ອຸປະກອນເຄືອຂ່າຍ (Network & WiFi)',
+            'Enterprise Network': 'ອຸປະກອນເຄືອຂ່າຍ (Network & WiFi)',
+            'Routers & Switches': 'ອຸປະກອນເຄືອຂ່າຍ (Network & WiFi)',
+            'Server & PC': 'ເຄື່ອງຄອມພິວເຕີ ແລະ ເຊີເວີ (Computers & Servers)',
+            'POS Systems': 'ລະບົບຂາຍໜ້າຮ້ານ (POS & Peripherals)'
+          };
+          parsed.brands.forEach(b => {
+            if (b && brandCatMap[b.category]) {
+              b.category = brandCatMap[b.category];
+            }
+          });
+        }
+
         if (parsed.purchaseOrders && Array.isArray(parsed.purchaseOrders)) {
           parsed.purchaseOrders = parsed.purchaseOrders.filter(p => !deletedSet.has(p.id) && !deletedSet.has(p.poNumber));
         }
@@ -534,7 +567,7 @@ class DatabaseManager {
   }
 
   async syncRecordToRemote(table, record) {
-    if (!record || !record.id || !navigator.onLine) return;
+    if (!record || !record.id || !navigator.onLine) return { success: false, reason: 'offline' };
 
     // 1. Supabase direct upsert
     const sb = this.getSupabaseClient();
@@ -543,10 +576,11 @@ class DatabaseManager {
       const snakeRow = objectToSnake(record);
       try {
         await sb.from(dbTable).upsert(snakeRow, { onConflict: 'id' });
+        return { success: true, mode: 'supabase' };
       } catch (err) {
         console.warn(`Supabase upsert error for ${dbTable}:`, err);
+        return { success: false, error: err.message };
       }
-      return;
     }
 
     // 2. Cloudflare D1 direct upsert
@@ -562,11 +596,15 @@ class DatabaseManager {
         if (!syncRes.ok) {
           const errData = await syncRes.json().catch(() => ({}));
           console.warn(`Cloudflare D1 sync failed for ${dbTable} (HTTP ${syncRes.status}):`, errData.error || syncRes.statusText);
+          return { success: false, status: syncRes.status, error: errData.error || syncRes.statusText };
         }
+        return { success: true, mode: 'cloudflare_d1' };
       } catch (e) {
         console.warn(`Cloudflare D1 sync error for ${dbTable}:`, e);
+        return { success: false, error: e.message };
       }
     }
+    return { success: false, reason: 'no_worker_url' };
   }
 
   async deleteFromRemote(table, id) {
@@ -819,25 +857,31 @@ class DatabaseManager {
   }
 
   getWorkerUrl() {
-    let url = (this.data && this.data.settings && this.data.settings.d1WorkerUrl || '').trim();
-    // Clear outdated demo/legacy worker URLs or Vercel origins (Vercel is static frontend, not D1 worker)
-    if (!url || url.includes('netd-manage-web.netditsolutions.workers.dev') || url.includes('vercel.app')) {
-      const stored = (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_worker_url') : '') || '';
-      url = (stored && !stored.includes('vercel.app')) ? stored.trim() : 'https://netd-manage-webapp.netditsolutions.workers.dev';
-      if (this.data && this.data.settings) this.data.settings.d1WorkerUrl = url;
+    // 1. If user explicitly stored a worker URL in localStorage, prioritize it
+    const stored = (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_worker_url') : '') || '';
+    if (stored && !stored.includes('vercel.app')) {
+      const cleanStored = stored.trim().replace(/\/+$/, '');
+      if (this.data && this.data.settings) this.data.settings.d1WorkerUrl = cleanStored;
+      return cleanStored;
     }
 
-    // If running on worker or custom domain (NOT localhost, github.io, or vercel.app)
-    if (!url) {
-      if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
-        const host = window.location.hostname;
-        if (host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('github.io') && !host.endsWith('vercel.app')) {
-          url = window.location.origin;
-          if (this.data && this.data.settings) this.data.settings.d1WorkerUrl = url;
-        }
+    // 2. If running directly on a Cloudflare Worker or Pages domain or custom domain (NOT localhost, 127.0.0.1, github.io, or vercel.app)
+    if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
+      const host = window.location.hostname;
+      if (host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('github.io') && !host.endsWith('vercel.app')) {
+        const originUrl = window.location.origin.replace(/\/+$/, '');
+        if (this.data && this.data.settings) this.data.settings.d1WorkerUrl = originUrl;
+        return originUrl;
       }
     }
-    return url || 'https://netd-manage-webapp.netditsolutions.workers.dev';
+
+    // 3. Check settings
+    let url = (this.data && this.data.settings && this.data.settings.d1WorkerUrl || '').trim().replace(/\/+$/, '');
+    if (url && !url.includes('netd-manage-web.netditsolutions.workers.dev') && !url.includes('vercel.app')) {
+      return url;
+    }
+
+    return 'https://netd-manage-webapp.netditsolutions.workers.dev';
   }
 
   subscribe(fn) {
@@ -1096,14 +1140,51 @@ class DatabaseManager {
   updateCategory(id, updated) {
     const idx = this.data.categories.findIndex(c => c.id === id);
     if (idx !== -1) {
-      this.data.categories[idx] = { ...this.data.categories[idx], ...updated };
+      const oldCat = this.data.categories[idx];
+      const oldName = oldCat.name;
+      this.data.categories[idx] = { ...oldCat, ...updated };
+      
+      // If category name was updated, update matching brands and products
+      if (updated.name && updated.name !== oldName) {
+        if (Array.isArray(this.data.brands)) {
+          this.data.brands.forEach(b => {
+            if (b.category === oldName || b.categoryId === id) {
+              b.category = updated.name;
+              b.categoryId = id;
+              this.syncRecordToRemote('brands', b);
+            }
+          });
+        }
+      }
+
       this.syncRecordToRemote('categories', this.data.categories[idx]);
       this.notify();
     }
   }
 
   deleteCategory(id) {
+    const cat = this.data.categories.find(c => c.id === id);
+    const catName = cat ? cat.name : null;
     this.data.categories = this.data.categories.filter(c => c.id !== id);
+
+    // Gracefully clear categoryId or category from products and brands
+    if (Array.isArray(this.data.products)) {
+      this.data.products.forEach(p => {
+        if (p.categoryId === id) {
+          p.categoryId = '';
+          this.syncRecordToRemote('products', p);
+        }
+      });
+    }
+    if (catName && Array.isArray(this.data.brands)) {
+      this.data.brands.forEach(b => {
+        if (b.categoryId === id || b.category === catName) {
+          b.categoryId = '';
+          this.syncRecordToRemote('brands', b);
+        }
+      });
+    }
+
     this.deleteFromRemote('categories', id);
     this.notify();
   }
@@ -2157,10 +2238,13 @@ class DatabaseManager {
 
   async updateSettings(newSettings) {
     if (!this.data.settings) this.data.settings = {};
+    const nowIso = new Date().toISOString();
     this.data.settings = { 
       id: 'setting_01',
       ...this.data.settings, 
-      ...newSettings 
+      ...newSettings,
+      updatedAt: nowIso,
+      lastLocalEdit: Date.now()
     };
     if (!this.data.settings.id) this.data.settings.id = 'setting_01';
 
@@ -2172,20 +2256,22 @@ class DatabaseManager {
       localStorage.setItem('netd_supabase_key', newSettings.supabaseAnonKey || '');
     }
     if (newSettings.d1WorkerUrl !== undefined && typeof localStorage !== 'undefined') {
-      localStorage.setItem('netd_worker_url', newSettings.d1WorkerUrl || '');
+      localStorage.setItem('netd_worker_url', (newSettings.d1WorkerUrl || '').trim());
     }
 
     this.saveLocal();
     this.notify(true, false);
 
     // Direct Remote Sync to Supabase or Cloudflare D1
+    let syncRes = null;
     try {
-      await this.syncRecordToRemote('settings', this.data.settings);
+      syncRes = await this.syncRecordToRemote('settings', this.data.settings);
     } catch (e) {
       console.warn('Sync settings error:', e);
+      syncRes = { success: false, error: e.message };
     }
 
-    return this.data.settings;
+    return { settings: this.data.settings, syncRes };
   }
 
   exportBackupJson() {
@@ -2306,26 +2392,35 @@ class DatabaseManager {
       }
 
       const pData = result.data;
-      if (pData.settings && Object.keys(pData.settings).length > 0) {
-        const curWorkerUrl = this.data.settings && this.data.settings.d1WorkerUrl;
-        const curSbUrl = this.data.settings && this.data.settings.supabaseUrl;
-        const curSbKey = this.data.settings && this.data.settings.supabaseAnonKey;
+      if (pData.settings && typeof pData.settings === 'object' && Object.keys(pData.settings).length > 0) {
+        const curSettings = this.data.settings || {};
+        const localEditTime = curSettings.lastLocalEdit || 0;
+        const remoteUpdateTime = pData.settings.updatedAt ? new Date(pData.settings.updatedAt).getTime() : 0;
 
-        // Clean remote settings: do not overwrite local populated values with null, undefined, or empty strings
-        const cleanRemote = {};
-        for (const [k, v] of Object.entries(pData.settings)) {
-          if (v !== null && v !== undefined && v !== '') {
-            cleanRemote[k] = v;
+        // If local settings were modified within the last 5 minutes and are newer than remote, preserve local edits
+        const isLocalNewer = (Date.now() - localEditTime < 300000) && (localEditTime > remoteUpdateTime);
+
+        if (!isLocalNewer) {
+          const curWorkerUrl = curSettings.d1WorkerUrl;
+          const curSbUrl = curSettings.supabaseUrl;
+          const curSbKey = curSettings.supabaseAnonKey;
+
+          // Clean remote settings: do not overwrite local populated values with null, undefined, or empty strings
+          const cleanRemote = {};
+          for (const [k, v] of Object.entries(pData.settings)) {
+            if (v !== null && v !== undefined && v !== '') {
+              cleanRemote[k] = v;
+            }
           }
-        }
 
-        this.data.settings = { 
-          ...this.data.settings, 
-          ...cleanRemote,
-          d1WorkerUrl: cleanRemote.d1WorkerUrl || curWorkerUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_worker_url') : '') || 'https://netd-manage-webapp.netditsolutions.workers.dev',
-          supabaseUrl: cleanRemote.supabaseUrl || curSbUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || '',
-          supabaseAnonKey: cleanRemote.supabaseAnonKey || curSbKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || ''
-        };
+          this.data.settings = { 
+            ...curSettings, 
+            ...cleanRemote,
+            d1WorkerUrl: (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_worker_url') : '') || cleanRemote.d1WorkerUrl || curWorkerUrl || this.getWorkerUrl(),
+            supabaseUrl: (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || cleanRemote.supabaseUrl || curSbUrl || '',
+            supabaseAnonKey: (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || cleanRemote.supabaseAnonKey || curSbKey || ''
+          };
+        }
       }
 
       const tableKeys = [

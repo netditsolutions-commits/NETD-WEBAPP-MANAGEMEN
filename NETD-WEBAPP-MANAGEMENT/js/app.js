@@ -818,17 +818,53 @@ const App = {
     await this.pullAllDataFromCloudflare();
   },
 
-  saveD1Endpoint() {
+  async saveD1Endpoint() {
     const url = document.getElementById('cfg-worker-url')?.value?.trim();
-    window.db.updateSettings({ d1WorkerUrl: url });
+    if (!url) {
+      Swal.fire({ title: 'ກະລຸນາໃສ່ URL', text: 'ກະລຸນາປ້ອນ Cloudflare Worker API URL', icon: 'warning', customClass: { popup: 'swal-glass' } });
+      return;
+    }
+    const cleanUrl = url.replace(/\/+$/, '');
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('netd_worker_url', cleanUrl);
+    }
+    await window.db.updateSettings({ d1WorkerUrl: cleanUrl });
+
     Swal.fire({
-      title: 'ບັນທຶກ URL ສຳເລັດ!',
-      text: 'Cloudflare Worker API Endpoint ໄດ້ຮັບການບັນທຶກແລ້ວ',
-      icon: 'success',
-      timer: 1500,
-      showConfirmButton: false,
+      title: 'ກຳລັງທົດສອບເຊື່ອມຕໍ່ URL ໃໝ່...',
+      didOpen: () => Swal.showLoading(),
+      allowOutsideClick: false,
       customClass: { popup: 'swal-glass' }
     });
+
+    const testRes = await window.db.testConnection(cleanUrl);
+    if (testRes.online) {
+      Swal.fire({
+        title: 'ເຊື່ອມຕໍ່ສຳເລັດ!',
+        html: `
+          <div class="text-left text-xs space-y-1">
+            <p class="text-emerald-400 font-bold">✅ Worker URL ຖືກຕ້ອງ ແລະ ເຊື່ອມຕໍ່ D1 ສຳເລັດ!</p>
+            <p>⚡ Latency: <strong>${testRes.latency} ms</strong></p>
+            <p>💾 Engine: <strong>${testRes.sqlite_version || 'Cloudflare D1'}</strong></p>
+          </div>
+        `,
+        icon: 'success',
+        customClass: { popup: 'swal-glass' }
+      });
+      this.updateLiveHeader();
+    } else {
+      Swal.fire({
+        title: 'ບັນທຶກແລ້ວ ແຕ່ຍັງເຊື່ອມຕໍ່ບໍ່ໄດ້',
+        html: `
+          <div class="text-left text-xs space-y-2">
+            <p class="text-amber-300 font-bold">⚠️ ${testRes.message}</p>
+            <p class="opacity-75">ກະລຸນາກວດສອບວ່າ Worker ຖືກ deploy ແລະ ເປີດ workers.dev ແລ້ວບໍໃນ Cloudflare Dashboard.</p>
+          </div>
+        `,
+        icon: 'warning',
+        customClass: { popup: 'swal-glass' }
+      });
+    }
   },
 
   async syncAllDataToCloudflare() {
@@ -9329,21 +9365,43 @@ const App = {
           </div>
         </div>
 
-        <!-- Supabase Cloud Database Box (Primary) -->
-        <div class="glass-panel p-5 border border-emerald-500/40 relative overflow-hidden shadow-2xl">
-          <div class="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <!-- Cloudflare D1 Cloud Database Box (Primary) -->
+        <div class="glass-panel p-5 border border-sky-500/40 relative overflow-hidden shadow-2xl">
+          <div class="absolute top-0 right-0 w-48 h-48 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
           <div class="flex items-center justify-between mb-2">
             <h3 class="font-bold text-white flex items-center gap-2">
-              <i class="fa-solid fa-bolt text-emerald-400 text-lg"></i> Supabase Cloud Database (PostgreSQL + Realtime)
+              <i class="fa-brands fa-cloudflare text-orange-400 text-xl"></i> Cloudflare D1 Database (SQLite Edge Backend)
             </h3>
-            <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Realtime Active
+            <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> D1 Multi-Browser Sync
             </span>
           </div>
           <p class="text-xs text-slate-300 mb-3">
-            ເຊື່ອມຕໍ່ຖານຂໍ້ມູນ Supabase Cloud: ເມື່ອມີການເພີ່ມ/ລືບ/ແກ້ໄຂ, ທຸກອຸປະກອນ (ມືຖື, ຄອມພິວເຕີ) ຈະອັບເດດ Realtime ທັນທີພາຍໃນ &lt; 100ms!
+            ເຊື່ອມຕໍ່ຖານຂໍ້ມູນ Cloudflare D1 SQLite: ເມື່ອມີການເພີ່ມ/ລຶບ/ແກ້ໄຂ, ທຸກອຸປະກອນ ແລະ ທຸກ Browser ຈະ Sync ຂໍ້ມູນດຽວກັນຜ່ານ Cloudflare Edge API!
           </p>
           <div class="space-y-3 text-xs">
+            <div>
+              <label class="block mb-1 font-bold text-slate-200">Cloudflare Worker API Endpoint</label>
+              <input type="url" id="cfg-worker-url" class="glass-input w-full font-mono text-xs" value="${s.d1WorkerUrl || window.db.getWorkerUrl()}" placeholder="https://netd-manage-webapp.your-subdomain.workers.dev">
+            </div>
+            <div class="flex flex-wrap gap-2 pt-1">
+              <button onclick="App.saveD1Endpoint()" class="btn-glass-primary">💾 ບັນທຶກ & ທົດສອບ URL</button>
+              <button onclick="App.handleManualTestConnection()" class="btn-glass-secondary">🔗 ທົດສອບ D1</button>
+              <button onclick="App.syncAllDataToCloudflare()" class="btn-glass-success">⬆️ ຊິ້ງຂຶ້ນ D1 (Upload)</button>
+              <button onclick="App.pullAllDataFromCloudflare()" class="btn-glass-secondary text-cyan-300 border-cyan-400/40">⬇️ ດຶງຂໍ້ມູນຈາກ D1 (Download)</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Supabase Cloud Database Box (Secondary / Alternative) -->
+        <details class="glass-panel p-4 text-xs group">
+          <summary class="font-bold cursor-pointer text-slate-300 flex items-center justify-between">
+            <span class="flex items-center gap-2">
+              <i class="fa-solid fa-bolt text-emerald-400 text-base"></i> Supabase Cloud Database (ທາງເລືອກເສີມ)
+            </span>
+            <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition"></i>
+          </summary>
+          <div class="space-y-3 text-xs pt-3 mt-2 border-t border-white/10">
             <div>
               <label class="block mb-1 font-bold text-slate-200">Supabase Project URL</label>
               <input type="url" id="cfg-supabase-url" class="glass-input w-full font-mono" value="${s.supabaseUrl || ''}" placeholder="https://xyzabc.supabase.co">
@@ -9354,31 +9412,8 @@ const App = {
             </div>
             <div class="flex flex-wrap gap-2 pt-1">
               <button onclick="App.saveSupabaseConfig()" class="btn-glass-primary">💾 ບັນທຶກ Supabase</button>
-              <button onclick="App.handleManualTestConnection()" class="btn-glass-secondary">🔗 ທົດສອບເຊື່ອມຕໍ່</button>
-              <button onclick="App.syncAllDataToCloud()" class="btn-glass-success">⬆️ ຊິ້ງຂໍ້ມູນທັງໝົດຂຶ້ນ Cloud (Upload)</button>
-              <button onclick="App.pullAllDataFromCloud()" class="btn-glass-secondary text-cyan-300 border-cyan-400/40">⬇️ ດຶງຂໍ້ມູນຈາກ Cloud (Download)</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Cloudflare D1 Integration Box (Secondary / Alternative) -->
-        <details class="glass-panel p-4 text-xs group">
-          <summary class="font-bold cursor-pointer text-slate-300 flex items-center justify-between">
-            <span class="flex items-center gap-2">
-              <i class="fa-brands fa-cloudflare text-orange-400 text-base"></i> Cloudflare D1 Integration (ທາງເລືອກເສີມ)
-            </span>
-            <i class="fa-solid fa-chevron-down text-slate-400 group-open:rotate-180 transition"></i>
-          </summary>
-          <div class="space-y-3 text-xs pt-3 mt-2 border-t border-white/10">
-            <div>
-              <label class="block mb-1 font-bold">Cloudflare Worker API Endpoint</label>
-              <input type="url" id="cfg-worker-url" class="glass-input w-full font-mono" value="${s.d1WorkerUrl || ''}" placeholder="https://netd-manage-webapp.netditsolutions.workers.dev">
-            </div>
-            <div class="flex flex-wrap gap-2 pt-1">
-              <button onclick="App.saveD1Endpoint()" class="btn-glass-primary">ບັນທຶກ URL</button>
-              <button onclick="App.handleManualTestConnection()" class="btn-glass-secondary">🔗 ທົດສອບ D1</button>
-              <button onclick="App.syncAllDataToCloudflare()" class="btn-glass-success">⬆️ ຊິ້ງຂຶ້ນ D1 (Upload)</button>
-              <button onclick="App.pullAllDataFromCloudflare()" class="btn-glass-secondary text-cyan-300 border-cyan-400/40">⬇️ ດຶງຂໍ້ມູນຈາກ D1 (Download)</button>
+              <button onclick="App.syncAllDataToCloud()" class="btn-glass-success">⬆️ ຊິ້ງຂໍ້ມູນຂຶ້ນ Cloud</button>
+              <button onclick="App.pullAllDataFromCloud()" class="btn-glass-secondary text-cyan-300 border-cyan-400/40">⬇️ ດຶງຂໍ້ມູນຈາກ Cloud</button>
             </div>
           </div>
         </details>
@@ -9609,28 +9644,45 @@ const App = {
       if (!newCfg.d1WorkerUrl) {
         newCfg.d1WorkerUrl = window.db.getWorkerUrl();
       }
-      await window.db.updateSettings(newCfg);
+      const updateRes = await window.db.updateSettings(newCfg);
       this.updateLiveHeader();
 
-      let syncResult;
-      if (window.db.getSupabaseClient()) {
-        syncResult = await window.db.pushAllToSupabase();
+      let syncResult = updateRes.syncRes;
+      if (!syncResult || !syncResult.success) {
+        if (window.db.getSupabaseClient()) {
+          syncResult = await window.db.pushAllToSupabase();
+        } else {
+          syncResult = await window.db.syncWithCloudflareD1();
+        }
+      }
+
+      if (syncResult && syncResult.success) {
+        Swal.fire({ 
+          title: 'ບັນທຶກສຳເລັດ!', 
+          text: 'ຂໍ້ມູນຮ້ານ, ໂລໂກ້ ແລະ ບັນຊີທະນາຄານຖືກບັນທຶກ ແລະ Sync ຂຶ້ນ Cloudflare D1 ຮຽບຮ້ອຍແລ້ວ', 
+          icon: 'success', 
+          timer: 1800, 
+          showConfirmButton: false, 
+          customClass: { popup: 'swal-glass' } 
+        });
       } else {
-        syncResult = await window.db.syncWithCloudflareD1();
+        const errorMsg = syncResult ? (syncResult.error || 'Server ຕອບກັບຜິດພາດ') : 'ບໍ່ສາມາດເຊື່ອມຕໍ່ Worker ໄດ້';
+        Swal.fire({
+          title: 'ບັນທຶກໃນເຄື່ອງສຳເລັດ!',
+          html: `
+            <div class="text-left text-xs space-y-2">
+              <p class="text-emerald-400 font-bold">✓ ຂໍ້ມູນຮ້ານຖືກບັນທຶກໄວ້ໃນ Browser ນີ້ຮຽບຮ້ອຍແລ້ວ (ບໍ່ຫຼຸດ).</p>
+              <div class="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i> <strong>ແຈ້ງເຕືອນ Cloudflare D1 Sync:</strong>
+                <p class="mt-1 font-mono text-[11px]">${errorMsg}</p>
+              </div>
+              <p class="opacity-75">ກະລຸນາກວດສອບ Worker URL ແລະ deploy ໄຟລ໌ worker.js ໃໝ່ໃນ Cloudflare Dashboard.</p>
+            </div>
+          `,
+          icon: 'warning',
+          customClass: { popup: 'swal-glass' }
+        });
       }
-
-      if (syncResult && !syncResult.success) {
-        throw new Error(syncResult.error || 'Sync Error');
-      }
-
-      Swal.fire({ 
-        title: 'ບັນທຶກສຳເລັດ!', 
-        text: 'ຂໍ້ມູນຮ້ານ, ໂລໂກ້ ແລະ ບັນຊີທະນາຄານຖືກບັນທຶກ ແລະ Sync ຂຶ້ນ Cloud/D1 ຮຽບຮ້ອຍແລ້ວ', 
-        icon: 'success', 
-        timer: 1800, 
-        showConfirmButton: false, 
-        customClass: { popup: 'swal-glass' } 
-      });
     } catch (err) {
       Swal.fire({
         title: 'ເກີດຂໍ້ຜິດພາດ',
