@@ -23,10 +23,13 @@ CREATE TABLE IF NOT EXISTS public.settings (
     bank_account_name TEXT DEFAULT 'NETD IT SOLUTIONS & SERVICES',
     bank_qr_url TEXT,
     d1_worker_url TEXT,
+    d1_database_id TEXT,
+    sync_mode TEXT,
     supabase_url TEXT,
     supabase_anon_key TEXT,
     theme TEXT DEFAULT 'dark',
     last_sync TIMESTAMPTZ,
+    last_sync_time TIMESTAMPTZ,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -199,6 +202,7 @@ CREATE TABLE IF NOT EXISTS public.documents (
     date DATE DEFAULT CURRENT_DATE,
     doc_date DATE,
     due_date DATE,
+    valid_until DATE,
     status TEXT DEFAULT 'paid',
     subtotal REAL DEFAULT 0,
     discount REAL DEFAULT 0,
