@@ -4848,6 +4848,9 @@ const App = {
           (p.orderDate || '').includes(q)
         );
       }
+      if (window.db && typeof window.db.sortByNewest === 'function') {
+        pos = window.db.sortByNewest(pos);
+      }
     } else {
       docs = window.db.getDocuments(this.docFilterTab);
       if (this.docFilterMonth && this.docFilterMonth !== 'all') {
@@ -4860,6 +4863,9 @@ const App = {
           (d.customerName || '').toLowerCase().includes(q) ||
           (d.date || '').includes(q)
         );
+      }
+      if (window.db && typeof window.db.sortByNewest === 'function') {
+        docs = window.db.sortByNewest(docs);
       }
     }
 

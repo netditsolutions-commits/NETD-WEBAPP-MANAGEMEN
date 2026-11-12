@@ -29,11 +29,11 @@ const DEFAULT_DATABASE = {
     bankAccountNo: '010-12-00-01234567-001',
     bankAccountName: 'NETD IT SOLUTIONS & SERVICES',
     bankQrUrl: '',
-    supabaseUrl: '',
+    supabaseUrl: 'https://qohxvisrdckmhegewpsx.supabase.co',
     supabaseAnonKey: '',
     d1WorkerUrl: 'https://netd-manage-webapp.netditsolutions.workers.dev',
     d1DatabaseId: 'netd_it_management',
-    syncMode: 'cloudflare_d1',
+    syncMode: 'supabase',
     theme: 'dark', // 'dark' or 'light'
     lastSync: null
   },
@@ -313,11 +313,20 @@ function toSnakeForRemote(table, record) {
   if (!record || typeof record !== 'object') return record;
   const snake = objectToSnake(record);
 
+  if (table === 'settings') {
+    delete snake.d1_database_id;
+    delete snake.sync_mode;
+  }
+
   if (table === 'documents') {
     if (record.items) {
       snake.items_json = typeof record.items === 'string' ? record.items : JSON.stringify(record.items);
     }
     delete snake.items;
+    if (snake.valid_until && !snake.due_date) {
+      snake.due_date = snake.valid_until;
+    }
+    delete snake.valid_until;
     if (!snake.customer_id) snake.customer_id = 'cust_walk_in';
     if (!snake.customer_name) snake.customer_name = 'ລູກຄ້າທົ່ວໄປ';
     if (!snake.type && snake.doc_type) snake.type = snake.doc_type;
@@ -451,11 +460,49 @@ function normalizeClientRecord(clientKey, raw) {
   return item;
 }
 
+function sortByNewest(list) {
+  if (!Array.isArray(list)) return [];
+  return [...list].sort((a, b) => {
+    if (!a && !b) return 0;
+    if (!a) return 1;
+    if (!b) return -1;
+
+    // 1. Primary sort key: Date descending (newest date first, e.g. '2026-11-12' > '2026-11-11')
+    const dateA = a.date || a.orderDate || a.receivedDate || a.startDate || a.soldDate || a.createdAt || a.created_at || '';
+    const dateB = b.date || b.orderDate || b.receivedDate || b.startDate || b.soldDate || b.createdAt || b.created_at || '';
+    if (dateA && dateB && dateA !== dateB) {
+      const cmp = String(dateB).localeCompare(String(dateA));
+      if (cmp !== 0) return cmp;
+    } else if (dateA && !dateB) {
+      return -1;
+    } else if (!dateA && dateB) {
+      return 1;
+    }
+
+    // 2. Secondary sort key: numeric timestamp embedded in ID (e.g. doc_1794468848432 or 1794468848432)
+    const matchA = String(a.id || '').match(/\d{10,14}/);
+    const matchB = String(b.id || '').match(/\d{10,14}/);
+    if (matchA && matchB && matchA[0] !== matchB[0]) {
+      const numA = Number(matchA[0]);
+      const numB = Number(matchB[0]);
+      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+        return numB - numA;
+      }
+    }
+
+    // 3. Tertiary sort key: Document number, PO number, Job code, Code, SKU, or ID in descending natural sort
+    const idA = String(a.docNumber || a.poNumber || a.jobCode || a.code || a.sku || a.id || '');
+    const idB = String(b.docNumber || b.poNumber || b.jobCode || b.code || b.sku || b.id || '');
+    return idB.localeCompare(idA, undefined, { numeric: true });
+  });
+}
+
 function safeMergeRecords(currentLocalList, remoteList, deletedSet) {
   const remoteIds = new Set();
   const remoteDocNums = new Set();
   const remotePoNums = new Set();
   const mergedList = [];
+  const unsyncedLocals = [];
 
   (remoteList || []).forEach(rem => {
     if (rem && rem.id) {
@@ -477,7 +524,8 @@ function safeMergeRecords(currentLocalList, remoteList, deletedSet) {
                           (loc.docNumber && remoteDocNums.has(loc.docNumber)) ||
                           (loc.poNumber && remotePoNums.has(loc.poNumber));
       if (!isDuplicate) {
-        mergedList.unshift(loc);
+        mergedList.push(loc);
+        unsyncedLocals.push(loc);
         remoteIds.add(loc.id);
         if (loc.docNumber) remoteDocNums.add(loc.docNumber);
         if (loc.poNumber) remotePoNums.add(loc.poNumber);
@@ -485,7 +533,10 @@ function safeMergeRecords(currentLocalList, remoteList, deletedSet) {
     });
   }
 
-  return mergedList;
+  const sortedList = sortByNewest(mergedList);
+  sortedList.unsyncedLocals = unsyncedLocals;
+  sortedList.hasUnsyncedLocal = unsyncedLocals.length > 0;
+  return sortedList;
 }
 
 const SUPABASE_TABLES = {
@@ -535,6 +586,7 @@ const SUPABASE_REVERSE_TABLES = {
 // ----------------------------------------------------------------------------
 class DatabaseManager {
   constructor() {
+    this.sortByNewest = sortByNewest;
     this.data = this.loadLocal();
     this.connectionStatus = 'offline';
     this.listeners = [];
@@ -696,8 +748,8 @@ class DatabaseManager {
           settings: { 
             ...DEFAULT_DATABASE.settings, 
             ...(parsed.settings || {}),
-            supabaseUrl: (parsed.settings && parsed.settings.supabaseUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || '').trim(),
-            supabaseAnonKey: (parsed.settings && parsed.settings.supabaseAnonKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || '').trim(),
+            supabaseUrl: (parsed.settings && parsed.settings.supabaseUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || DEFAULT_DATABASE.settings.supabaseUrl || '').trim(),
+            supabaseAnonKey: (parsed.settings && parsed.settings.supabaseAnonKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || DEFAULT_DATABASE.settings.supabaseAnonKey || '').trim(),
             d1WorkerUrl: (parsed.settings && parsed.settings.d1WorkerUrl && !parsed.settings.d1WorkerUrl.includes('netd-manage-web.netditsolutions.workers.dev') && !parsed.settings.d1WorkerUrl.includes('vercel.app')) 
               ? parsed.settings.d1WorkerUrl.trim() 
               : 'https://netd-manage-webapp.netditsolutions.workers.dev'
@@ -952,20 +1004,21 @@ class DatabaseManager {
     if (eventType === 'INSERT' && newRecord) {
       const idx = this.data[clientKey].findIndex(item => item.id === newRecord.id);
       if (idx === -1) {
-        this.data[clientKey].unshift(newRecord);
+        this.data[clientKey].push(newRecord);
       } else {
         this.data[clientKey][idx] = { ...this.data[clientKey][idx], ...newRecord };
       }
+      this.data[clientKey] = sortByNewest(this.data[clientKey]);
       this.notify(true, true);
     } else if (eventType === 'UPDATE' && newRecord) {
       const idx = this.data[clientKey].findIndex(item => item.id === newRecord.id);
       if (idx !== -1) {
         this.data[clientKey][idx] = { ...this.data[clientKey][idx], ...newRecord };
-        this.notify(true, true);
       } else {
-        this.data[clientKey].unshift(newRecord);
-        this.notify(true, true);
+        this.data[clientKey].push(newRecord);
       }
+      this.data[clientKey] = sortByNewest(this.data[clientKey]);
+      this.notify(true, true);
     } else if (eventType === 'DELETE' && oldRecord && oldRecord.id) {
       this.data[clientKey] = this.data[clientKey].filter(item => item.id !== oldRecord.id);
       this.notify(true, true);
@@ -1001,6 +1054,12 @@ class DatabaseManager {
           const { error } = await sb.from(dbTable).upsert(chunk, { onConflict: 'id' });
           if (error) {
             console.warn(`Upsert chunk error for ${dbTable}:`, error);
+            for (const singleRow of chunk) {
+              const { error: singleErr } = await sb.from(dbTable).upsert(singleRow, { onConflict: 'id' });
+              if (singleErr) {
+                console.warn(`Upsert single row error for ${dbTable} (${singleRow.id}):`, singleErr);
+              }
+            }
           }
         }
         totalSynced += rows.length;
@@ -1029,6 +1088,7 @@ class DatabaseManager {
     try {
       this.updateStatusDot('loading');
       const deletedSet = new Set(this.getDeletedIds());
+      let anyUnsynced = false;
 
       for (const [clientKey, dbTable] of Object.entries(SUPABASE_TABLES)) {
         if (clientKey === 'settings') {
@@ -1051,13 +1111,28 @@ class DatabaseManager {
             .map(r => normalizeClientRecord(clientKey, r))
             .filter(item => item && !deletedSet.has(item.id) && !deletedSet.has(item.docNumber) && !deletedSet.has(item.poNumber));
 
-          this.data[clientKey] = safeMergeRecords(this.data[clientKey], normalizedRemote, deletedSet);
+          const prevLocal = this.data[clientKey] || [];
+          const merged = safeMergeRecords(prevLocal, normalizedRemote, deletedSet);
+
+          if (merged.hasUnsyncedLocal) {
+            anyUnsynced = true;
+            for (const loc of merged.unsyncedLocals) {
+              await this.syncRecordToRemote(clientKey, loc).catch(() => {});
+            }
+          }
+
+          this.data[clientKey] = merged;
         }
       }
 
       this.saveLocal();
       this.notify(true, true);
       this.updateStatusDot('online');
+
+      if (anyUnsynced) {
+        this.scheduleCloudSync();
+      }
+
       return { success: true, message: 'ດຶງຂໍ້ມູນຫຼ້າສຸດຈາກ Supabase ສຳເລັດແລ້ວ' };
     } catch (err) {
       this.updateStatusDot('offline');
@@ -1071,20 +1146,44 @@ class DatabaseManager {
     if (!sb) return;
     try {
       const deletedSet = new Set(this.getDeletedIds());
+      let anyChanged = false;
+      let anyUnsynced = false;
+
       for (const [clientKey, dbTable] of Object.entries(SUPABASE_TABLES)) {
         if (clientKey === 'settings') continue;
         const { data, error } = await sb.from(dbTable).select('*');
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           const normalizedRemote = data
             .map(r => normalizeClientRecord(clientKey, r))
             .filter(item => item && !deletedSet.has(item.id) && !deletedSet.has(item.docNumber) && !deletedSet.has(item.poNumber));
 
-          this.data[clientKey] = safeMergeRecords(this.data[clientKey], normalizedRemote, deletedSet);
+          const prevLocal = this.data[clientKey] || [];
+          const merged = safeMergeRecords(prevLocal, normalizedRemote, deletedSet);
+
+          if (merged.hasUnsyncedLocal) {
+            anyUnsynced = true;
+            merged.unsyncedLocals.forEach(loc => {
+              this.syncRecordToRemote(clientKey, loc).catch(() => {});
+            });
+          }
+
+          if (JSON.stringify(prevLocal) !== JSON.stringify(merged)) {
+            anyChanged = true;
+          }
+
+          this.data[clientKey] = merged;
         }
       }
-      this.saveLocal();
-      this.notify(true, true);
+
+      if (anyChanged) {
+        this.saveLocal();
+        this.notify(true, true);
+      }
       this.updateStatusDot('online');
+
+      if (anyUnsynced) {
+        this.scheduleCloudSync();
+      }
     } catch (e) {}
   }
 
@@ -1422,7 +1521,7 @@ class DatabaseManager {
   }
 
   getProducts() {
-    return this.data.products;
+    return sortByNewest(this.data.products || []);
   }
 
   getProductById(id) {
@@ -1740,12 +1839,12 @@ class DatabaseManager {
   // PURCHASE ORDERS CRUD
   // --------------------------------------------------------------------------
   getPurchaseOrders() {
-    return this.data.purchaseOrders;
+    return sortByNewest(this.data.purchaseOrders || []);
   }
 
   addPurchaseOrder(po) {
     po.id = po.id || ('po_' + Date.now());
-    this.data.purchaseOrders.unshift(po);
+    this.data.purchaseOrders = sortByNewest([po, ...(this.data.purchaseOrders || [])]);
 
     // Also save as a document file so it can be managed & viewed just like quotation & invoice
     const docPo = {
@@ -1850,8 +1949,9 @@ class DatabaseManager {
   // DOCUMENTS CRUD
   // --------------------------------------------------------------------------
   getDocuments(type = null) {
-    if (!type || type === 'all') return this.data.documents;
-    return this.data.documents.filter(d => (d.docType === type || d.type === type));
+    const list = sortByNewest(this.data.documents || []);
+    if (!type || type === 'all') return list;
+    return list.filter(d => (d.docType === type || d.type === type));
   }
 
   getDocumentById(id) {
@@ -1877,7 +1977,7 @@ class DatabaseManager {
     doc.date = doc.date || new Date().toISOString().split('T')[0];
     doc.status = doc.status || 'paid';
 
-    this.data.documents.unshift(doc);
+    this.data.documents = sortByNewest([doc, ...(this.data.documents || [])]);
     this.saveLocal();
     
     // Automatically record income transaction ONLY IF status is paid
@@ -2020,14 +2120,14 @@ class DatabaseManager {
   }
 
   getProjects() {
-    return this.data.projects;
+    return sortByNewest(this.data.projects || []);
   }
 
   addProject(project) {
     project.id = 'proj_' + Date.now();
     project.progress = project.progress || 0;
     project.status = project.status || 'in_progress';
-    this.data.projects.unshift(project);
+    this.data.projects = sortByNewest([project, ...(this.data.projects || [])]);
     this.syncRecordToRemote('projects', project);
     this.notify();
     return project;
@@ -2126,8 +2226,9 @@ class DatabaseManager {
 
 
   getTasks(projectId = null) {
-    if (!projectId) return this.data.tasks;
-    return this.data.tasks.filter(t => t.projectId === projectId);
+    const list = sortByNewest(this.data.tasks || []);
+    if (!projectId) return list;
+    return list.filter(t => t.projectId === projectId);
   }
 
   addTask(task) {
@@ -2194,7 +2295,7 @@ class DatabaseManager {
   }
 
   getItJobs() {
-    return this.data.itJobs || [];
+    return sortByNewest(this.data.itJobs || []);
   }
 
   addItJob(job) {
@@ -2202,7 +2303,7 @@ class DatabaseManager {
     job.status = job.status || 'pending';
     job.receivedDate = job.receivedDate || new Date().toISOString().split('T')[0];
     if (!this.data.itJobs) this.data.itJobs = [];
-    this.data.itJobs.unshift(job);
+    this.data.itJobs = sortByNewest([job, ...(this.data.itJobs || [])]);
     this.syncRecordToRemote('it_jobs', job);
     this.notify();
     return job;
@@ -2229,7 +2330,7 @@ class DatabaseManager {
   // EMPLOYEES CRUD
   // --------------------------------------------------------------------------
   getEmployees() {
-    return this.data.employees;
+    return sortByNewest(this.data.employees || []);
   }
 
   addEmployee(emp) {
@@ -2261,7 +2362,7 @@ class DatabaseManager {
   // CUSTOMERS CRUD
   // --------------------------------------------------------------------------
   getCustomers() {
-    return this.data.customers;
+    return sortByNewest(this.data.customers || []);
   }
 
   addCustomer(customer) {
@@ -2293,7 +2394,8 @@ class DatabaseManager {
   // --------------------------------------------------------------------------
   getTransactions() {
     // Return transactions, ensuring any income transaction tied to a document ONLY appears if the document is PAID
-    return this.data.transactions.filter(t => {
+    const list = sortByNewest(this.data.transactions || []);
+    return list.filter(t => {
       if (t.type === 'income' && t.refDoc) {
         const doc = this.data.documents.find(d => d.docNumber === t.refDoc || d.id === t.refDoc);
         if (doc && doc.status && doc.status !== 'paid') {
@@ -2315,7 +2417,7 @@ class DatabaseManager {
       }
     }
     tx.id = 'tx_' + Date.now() + Math.floor(Math.random() * 100);
-    this.data.transactions.unshift(tx);
+    this.data.transactions = sortByNewest([tx, ...(this.data.transactions || [])]);
     this.syncRecordToRemote('transactions', tx);
     this.notify();
     return tx;
@@ -2450,7 +2552,7 @@ class DatabaseManager {
   // CLIENT SYSTEMS
   // --------------------------------------------------------------------------
   getClientSystems() {
-    return this.data.clientSystems;
+    return sortByNewest(this.data.clientSystems || []);
   }
 
   addClientSystem(sys) {
@@ -2774,7 +2876,7 @@ class DatabaseManager {
             });
           }
 
-          this.data[tk] = mergedList;
+          this.data[tk] = sortByNewest(mergedList);
           if (hasUnsyncedLocal) {
             this.scheduleCloudSync();
           }
