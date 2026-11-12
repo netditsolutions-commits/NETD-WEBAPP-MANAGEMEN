@@ -712,8 +712,8 @@ const App = {
   },
 
   async saveSupabaseConfig() {
-    const url = document.getElementById('cfg-supabase-url')?.value?.trim();
-    const key = document.getElementById('cfg-supabase-key')?.value?.trim();
+    let url = document.getElementById('cfg-supabase-url')?.value?.trim() || '';
+    const key = document.getElementById('cfg-supabase-key')?.value?.trim() || '';
     if (!url || !key) {
       Swal.fire({
         title: 'ກະລຸນາປ້ອນຂໍ້ມູນໃຫ້ຄົບ',
@@ -723,6 +723,11 @@ const App = {
       });
       return;
     }
+
+    // Auto-clean: remove /rest/v1 or trailing slashes if user copied REST API endpoint from dashboard
+    url = url.replace(/\/+$/, '').replace(/\/rest\/v\d+.*$/i, '').replace(/\/rest.*$/i, '');
+    const urlInput = document.getElementById('cfg-supabase-url');
+    if (urlInput) urlInput.value = url;
 
     Swal.fire({
       title: 'ກຳລັງເຊື່ອມຕໍ່ Supabase...',
@@ -9769,7 +9774,7 @@ const App = {
     }
     const sbUrlInput = document.getElementById('cfg-supabase-url')?.value?.trim();
     if (sbUrlInput) {
-      newCfg.supabaseUrl = sbUrlInput;
+      newCfg.supabaseUrl = sbUrlInput.replace(/\/+$/, '').replace(/\/rest\/v\d+.*$/i, '').replace(/\/rest.*$/i, '');
     }
     const sbKeyInput = document.getElementById('cfg-supabase-key')?.value?.trim();
     if (sbKeyInput) {

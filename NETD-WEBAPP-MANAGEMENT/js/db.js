@@ -834,14 +834,30 @@ class DatabaseManager {
   // --------------------------------------------------------------------------
   // SUPABASE CLIENT & REALTIME INTEGRATION
   // --------------------------------------------------------------------------
+  cleanSupabaseUrl(url) {
+    if (!url) return '';
+    let u = String(url).trim();
+    u = u.replace(/\/+$/, '');
+    u = u.replace(/\/rest\/v\d+.*$/i, '');
+    u = u.replace(/\/rest.*$/i, '');
+    return u;
+  }
+
   getSupabaseClient() {
-    if (this.supabase) return this.supabase;
     if (typeof window === 'undefined' || !window.supabase) return null;
-    const url = (this.data && this.data.settings && this.data.settings.supabaseUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || '').trim();
+    let url = (this.data && this.data.settings && this.data.settings.supabaseUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_url') : '') || '').trim();
     const key = (this.data && this.data.settings && this.data.settings.supabaseAnonKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('netd_supabase_key') : '') || '').trim();
+    url = this.cleanSupabaseUrl(url);
     if (!url || !key) return null;
+
+    if (this.supabase && this._cachedSbUrl === url && this._cachedSbKey === key) {
+      return this.supabase;
+    }
+
     try {
       this.supabase = window.supabase.createClient(url, key);
+      this._cachedSbUrl = url;
+      this._cachedSbKey = key;
       return this.supabase;
     } catch (e) {
       console.warn('Failed to initialize Supabase client:', e);
@@ -850,9 +866,11 @@ class DatabaseManager {
   }
 
   async initSupabase(url = null, anonKey = null) {
+    this.supabase = null;
     if (url) {
-      this.data.settings.supabaseUrl = url.trim();
-      if (typeof localStorage !== 'undefined') localStorage.setItem('netd_supabase_url', url.trim());
+      url = this.cleanSupabaseUrl(url);
+      this.data.settings.supabaseUrl = url;
+      if (typeof localStorage !== 'undefined') localStorage.setItem('netd_supabase_url', url);
     }
     if (anonKey) {
       this.data.settings.supabaseAnonKey = anonKey.trim();
