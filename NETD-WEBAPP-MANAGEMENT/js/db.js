@@ -244,7 +244,6 @@ function toSnakeForRemote(table, record) {
     if (snake.valid_until && !snake.due_date) {
       snake.due_date = snake.valid_until;
     }
-    delete snake.valid_until;
     if (!snake.customer_id) snake.customer_id = 'cust_walk_in';
     if (!snake.customer_name) snake.customer_name = 'ລູກຄ້າທົ່ວໄປ';
     if (!snake.type && snake.doc_type) snake.type = snake.doc_type;
@@ -252,12 +251,26 @@ function toSnakeForRemote(table, record) {
     if (snake.total_amount === undefined && snake.grand_total !== undefined) snake.total_amount = snake.grand_total;
     if (snake.grand_total === undefined && snake.total_amount !== undefined) snake.grand_total = snake.total_amount;
     if (snake.subtotal === undefined && snake.grand_total !== undefined) snake.subtotal = snake.grand_total;
+
+    // Delete non-standard schema columns so Supabase never throws PGRST204
+    delete snake.valid_until;
+    delete snake.shipping_cost;
+    delete snake.supplier_id;
+    delete snake.supplier_name;
+    delete snake.profit;
+    delete snake.cost_price;
+    delete snake.cost;
+    delete snake.tax;
+    delete snake.discount_percent;
   }
   if (table === 'purchase_orders' || table === 'purchaseOrders') {
     if (record.items) {
       snake.items_json = typeof record.items === 'string' ? record.items : JSON.stringify(record.items);
     }
     delete snake.items;
+    if (snake.total_amount === undefined && snake.grand_total !== undefined) snake.total_amount = snake.grand_total;
+    if (snake.grand_total === undefined && snake.total_amount !== undefined) snake.grand_total = snake.total_amount;
+    delete snake.grand_total;
   }
   if (table === 'projects') {
     if (record.milestones) {
@@ -666,27 +679,9 @@ function safeMergeRecords(currentLocalList, remoteList, deletedSet, clientKey) {
         mergedList.push(merged);
       } else {
         // Local record not found in remote:
-        const isMasterLookup = (clientKey === 'projectCategories' || clientKey === 'itJobCategories' || clientKey === 'categories' || clientKey === 'brands');
-        const isRecentlyModified = loc._localModifiedAt && (Date.now() - loc._localModifiedAt < 300000); // 5 minutes
-
-        // PRESERVE local record if:
-        // 1. It is a local draft (_isLocalDraft === true)
-        // 2. It was modified/created recently (< 5 mins)
-        // 3. It is a master lookup category (categories, brands, projectCategories, itJobCategories) which must NEVER be auto-purged by empty remote!
-        if (loc._isLocalDraft === true || isRecentlyModified || isMasterLookup) {
-          mergedList.push(loc);
-          unsyncedLocals.push(loc);
-        } else {
-          // Record was deleted from remote by another device -> purge locally
-          if (deletedSet) {
-            deletedSet.add(loc.id);
-            if (loc.docNumber) deletedSet.add(loc.docNumber);
-            if (loc.poNumber) deletedSet.add(loc.poNumber);
-          }
-          if (typeof window !== 'undefined' && window.db && typeof window.db.markAsDeleted === 'function') {
-            window.db.markAsDeleted(loc.id);
-          }
-        }
+        // NEVER auto-purge local user data! Keep the local record intact and queue it to sync to remote.
+        mergedList.push(loc);
+        unsyncedLocals.push(loc);
       }
     });
   }
@@ -756,10 +751,20 @@ class DatabaseManager {
     this.connectionStatus = 'offline';
     this.listeners = [];
 
-    // Auto-clean any accidentally purged project categories or it job categories from deletedSet
+    // Auto-clean any accidentally purged records from netd_deleted_ids
     try {
       const deletedIds = this.getDeletedIds();
-      const filtered = deletedIds.filter(id => !id.startsWith('pcat_') && !id.startsWith('itcat_'));
+      const filtered = deletedIds.filter(id => {
+        if (!id) return false;
+        if (ALL_MOCK_IDS.has(id)) return false;
+        if (id.startsWith('pcat_') || id.startsWith('itcat_')) return false;
+        if (this.data) {
+          if (Array.isArray(this.data.documents) && this.data.documents.some(d => d.id === id || d.docNumber === id)) return false;
+          if (Array.isArray(this.data.purchaseOrders) && this.data.purchaseOrders.some(p => p.id === id || p.poNumber === id)) return false;
+          if (Array.isArray(this.data.products) && this.data.products.some(p => p.id === id || p.sku === id)) return false;
+        }
+        return true;
+      });
       if (filtered.length !== deletedIds.length) {
         localStorage.setItem('netd_deleted_ids', JSON.stringify(filtered));
       }
@@ -1146,7 +1151,13 @@ class DatabaseManager {
         }
 
         if (parsed.products && Array.isArray(parsed.products)) {
-          parsed.products = parsed.products.filter(p => p && p.id && !ALL_MOCK_IDS.has(p.id) && !deletedSet.has(p.id));
+          parsed.products.forEach(p => {
+            if (p && p.id && !ALL_MOCK_IDS.has(p.id)) {
+              if (deletedSet.has(p.id)) { deletedSet.delete(p.id); this.unmarkDeleted(p.id); }
+              if (p.sku && deletedSet.has(p.sku)) { deletedSet.delete(p.sku); this.unmarkDeleted(p.sku); }
+            }
+          });
+          parsed.products = parsed.products.filter(p => p && p.id && !ALL_MOCK_IDS.has(p.id));
         }
 
         if (parsed.productSerials && Array.isArray(parsed.productSerials)) {
@@ -1171,8 +1182,12 @@ class DatabaseManager {
             if (d.docNumber && d.docNumber.startsWith('PO-') && d.docType !== 'po') {
               d.docType = 'po';
             }
+            if (d && d.id && !ALL_MOCK_IDS.has(d.id)) {
+              if (deletedSet.has(d.id)) { deletedSet.delete(d.id); this.unmarkDeleted(d.id); }
+              if (d.docNumber && deletedSet.has(d.docNumber)) { deletedSet.delete(d.docNumber); this.unmarkDeleted(d.docNumber); }
+            }
           });
-          parsed.documents = parsed.documents.filter(d => d && d.id && !ALL_MOCK_IDS.has(d.id) && !deletedSet.has(d.id) && !deletedSet.has(d.docNumber));
+          parsed.documents = parsed.documents.filter(d => d && d.id && !ALL_MOCK_IDS.has(d.id));
         }
 
         if (parsed.transactions && Array.isArray(parsed.transactions)) {
@@ -1196,7 +1211,13 @@ class DatabaseManager {
         }
 
         if (parsed.purchaseOrders && Array.isArray(parsed.purchaseOrders)) {
-          parsed.purchaseOrders = parsed.purchaseOrders.filter(p => p && p.id && !ALL_MOCK_IDS.has(p.id) && !deletedSet.has(p.id) && !deletedSet.has(p.poNumber));
+          parsed.purchaseOrders.forEach(p => {
+            if (p && p.id && !ALL_MOCK_IDS.has(p.id)) {
+              if (deletedSet.has(p.id)) { deletedSet.delete(p.id); this.unmarkDeleted(p.id); }
+              if (p.poNumber && deletedSet.has(p.poNumber)) { deletedSet.delete(p.poNumber); this.unmarkDeleted(p.poNumber); }
+            }
+          });
+          parsed.purchaseOrders = parsed.purchaseOrders.filter(p => p && p.id && !ALL_MOCK_IDS.has(p.id));
         }
 
         if (parsed.clientSystems && Array.isArray(parsed.clientSystems)) {
@@ -1746,7 +1767,18 @@ class DatabaseManager {
         if (!error && Array.isArray(data)) {
           const normalizedRemote = data
             .map(r => normalizeClientRecord(clientKey, r))
-            .filter(item => item && item.id && !ALL_MOCK_IDS.has(item.id) && !deletedSet.has(item.id) && !deletedSet.has(item.docNumber) && !deletedSet.has(item.poNumber));
+            .filter(item => {
+              if (!item || !item.id || ALL_MOCK_IDS.has(item.id)) return false;
+              if (deletedSet.has(item.id) || (item.docNumber && deletedSet.has(item.docNumber)) || (item.poNumber && deletedSet.has(item.poNumber))) {
+                deletedSet.delete(item.id);
+                if (item.docNumber) deletedSet.delete(item.docNumber);
+                if (item.poNumber) deletedSet.delete(item.poNumber);
+                this.unmarkDeleted(item.id);
+                if (item.docNumber) this.unmarkDeleted(item.docNumber);
+                if (item.poNumber) this.unmarkDeleted(item.poNumber);
+              }
+              return true;
+            });
 
           const prevLocal = this.data[clientKey] || [];
           const merged = safeMergeRecords(prevLocal, normalizedRemote, deletedSet, clientKey);
@@ -1793,7 +1825,18 @@ class DatabaseManager {
         if (!error && Array.isArray(data)) {
           const normalizedRemote = data
             .map(r => normalizeClientRecord(clientKey, r))
-            .filter(item => item && item.id && !ALL_MOCK_IDS.has(item.id) && !deletedSet.has(item.id) && !deletedSet.has(item.docNumber) && !deletedSet.has(item.poNumber));
+            .filter(item => {
+              if (!item || !item.id || ALL_MOCK_IDS.has(item.id)) return false;
+              if (deletedSet.has(item.id) || (item.docNumber && deletedSet.has(item.docNumber)) || (item.poNumber && deletedSet.has(item.poNumber))) {
+                deletedSet.delete(item.id);
+                if (item.docNumber) deletedSet.delete(item.docNumber);
+                if (item.poNumber) deletedSet.delete(item.poNumber);
+                this.unmarkDeleted(item.id);
+                if (item.docNumber) this.unmarkDeleted(item.docNumber);
+                if (item.poNumber) this.unmarkDeleted(item.poNumber);
+              }
+              return true;
+            });
 
           const prevLocal = this.data[clientKey] || [];
           const merged = safeMergeRecords(prevLocal, normalizedRemote, deletedSet, clientKey);
@@ -2249,6 +2292,7 @@ class DatabaseManager {
       product.id = 'prod_' + Date.now();
     }
     this.unmarkDeleted(product.id);
+    if (product.sku) this.unmarkDeleted(product.sku);
     product._isLocalDraft = true;
     const nowTs = Date.now();
     product._localModifiedAt = nowTs;
@@ -2269,6 +2313,7 @@ class DatabaseManager {
     if (product.salePrice !== undefined) {
       product.sellingPrice = product.salePrice;
     }
+    if (!Array.isArray(this.data.products)) this.data.products = [];
     this.data.products.push(product);
     this.saveLocal();
     this.syncRecordToRemote('products', product);
@@ -2298,7 +2343,10 @@ class DatabaseManager {
   updateProduct(id, updated) {
     const idx = this.data.products.findIndex(p => p.id === id);
     if (idx !== -1) {
+      this.unmarkDeleted(id);
       const oldProd = this.data.products[idx];
+      if (oldProd.sku) this.unmarkDeleted(oldProd.sku);
+      if (updated.sku) this.unmarkDeleted(updated.sku);
       const isSn = (oldProd.hasSn === 1 || oldProd.hasSn === true || oldProd.hasSn === '1');
       const nowTs = Date.now();
       updated._localModifiedAt = nowTs;
@@ -2790,22 +2838,29 @@ class DatabaseManager {
 
   addPurchaseOrder(po) {
     po.id = po.id || ('po_' + Date.now());
-    this.data.purchaseOrders = sortByNewest([po, ...(this.data.purchaseOrders || [])]);
+    this.unmarkDeleted(po.id);
+    if (po.poNumber) this.unmarkDeleted(po.poNumber);
+    po._isLocalDraft = true;
+    po._localModifiedAt = Date.now();
+    if (!Array.isArray(this.data.purchaseOrders)) this.data.purchaseOrders = [];
+    this.data.purchaseOrders = sortByNewest([po, ...this.data.purchaseOrders]);
 
     // Also save as a document file so it can be managed & viewed just like quotation & invoice
     const docPo = {
       id: po.id,
       docNumber: po.poNumber,
       docType: 'po',
+      type: 'po',
       supplierId: po.supplierId,
       supplierName: po.supplierName,
       customerName: po.supplierName,
-      date: po.orderDate,
+      date: po.orderDate || new Date().toISOString().split('T')[0],
       dueDate: po.expectedDate || null,
       status: po.status || 'ordered',
       shippingCost: po.shippingCost || 0,
       subtotal: (po.items || []).reduce((acc, it) => acc + (it.total || ((it.qty || 1) * (it.unitCost || it.unitPrice || 0))), 0),
-      grandTotal: po.totalAmount,
+      grandTotal: po.totalAmount || 0,
+      totalAmount: po.totalAmount || 0,
       notes: po.notes || '',
       items: (po.items || []).map(it => ({
         productId: it.productId,
@@ -2815,9 +2870,12 @@ class DatabaseManager {
         unitPrice: it.unitCost || it.unitPrice || 0,
         total: it.total || ((it.qty || it.quantity || 1) * (it.unitCost || it.unitPrice || 0))
       })),
-      createdBy: po.createdBy || 'Admin'
+      createdBy: po.createdBy || 'Admin',
+      _isLocalDraft: true,
+      _localModifiedAt: Date.now()
     };
 
+    if (!Array.isArray(this.data.documents)) this.data.documents = [];
     const existingDocIdx = this.data.documents.findIndex(d => d.id === po.id || d.docNumber === po.poNumber);
     if (existingDocIdx !== -1) {
       this.data.documents[existingDocIdx] = { ...this.data.documents[existingDocIdx], ...docPo };
@@ -2827,27 +2885,39 @@ class DatabaseManager {
       this.syncRecordToRemote('documents', docPo);
     }
 
+    this.saveLocal();
     this.syncRecordToRemote('purchase_orders', po);
     this.notify();
     return po;
   }
 
   updatePurchaseOrder(id, updated) {
+    if (!Array.isArray(this.data.purchaseOrders)) this.data.purchaseOrders = [];
     const idx = this.data.purchaseOrders.findIndex(p => p.id === id);
     if (idx !== -1) {
+      this.unmarkDeleted(id);
+      if (this.data.purchaseOrders[idx].poNumber) this.unmarkDeleted(this.data.purchaseOrders[idx].poNumber);
+      if (updated.poNumber) this.unmarkDeleted(updated.poNumber);
+      updated._localModifiedAt = Date.now();
       this.data.purchaseOrders[idx] = { ...this.data.purchaseOrders[idx], ...updated };
       
-      const dIdx = this.data.documents.findIndex(d => d.id === id || d.docNumber === this.data.purchaseOrders[idx].poNumber);
+      const dIdx = (this.data.documents || []).findIndex(d => d.id === id || d.docNumber === this.data.purchaseOrders[idx].poNumber);
       if (dIdx !== -1) {
         if (updated.status) this.data.documents[dIdx].status = updated.status;
-        if (updated.totalAmount) this.data.documents[dIdx].grandTotal = updated.totalAmount;
+        if (updated.totalAmount) {
+          this.data.documents[dIdx].grandTotal = updated.totalAmount;
+          this.data.documents[dIdx].totalAmount = updated.totalAmount;
+        }
         if (updated.notes) this.data.documents[dIdx].notes = updated.notes;
         if (updated.orderDate) this.data.documents[dIdx].date = updated.orderDate;
         if (updated.items) this.data.documents[dIdx].items = updated.items;
+        this.data.documents[dIdx]._localModifiedAt = Date.now();
         this.syncRecordToRemote('documents', this.data.documents[dIdx]);
       }
+      this.saveLocal();
       this.syncRecordToRemote('purchase_orders', this.data.purchaseOrders[idx]);
       this.notify();
+      return this.data.purchaseOrders[idx];
     }
   }
 
@@ -2981,6 +3051,10 @@ class DatabaseManager {
 
   addDocument(doc) {
     if (!doc.id) doc.id = 'doc_' + Date.now();
+    this.unmarkDeleted(doc.id);
+    if (doc.docNumber) this.unmarkDeleted(doc.docNumber);
+    doc._isLocalDraft = true;
+    doc._localModifiedAt = Date.now();
     doc.type = doc.type || doc.docType || 'pos';
     doc.docType = doc.docType || doc.type || 'pos';
     doc.customerId = doc.customerId || doc.customer_id || 'cust_walk_in';
@@ -2991,12 +3065,13 @@ class DatabaseManager {
     doc.date = doc.date || new Date().toISOString().split('T')[0];
     doc.status = doc.status || 'paid';
 
-    this.data.documents = sortByNewest([doc, ...(this.data.documents || [])]);
+    if (!Array.isArray(this.data.documents)) this.data.documents = [];
+    this.data.documents = sortByNewest([doc, ...this.data.documents]);
     this.saveLocal();
     
     // Automatically record income transaction ONLY IF status is paid
     if (doc.status === 'paid' && (doc.docType === 'invoice' || doc.docType === 'pos')) {
-      const exists = this.data.transactions.some(t => t.refDoc === doc.docNumber);
+      const exists = (this.data.transactions || []).some(t => t.refDoc === doc.docNumber);
       if (!exists) {
         const initialProfit = this.calculateDocumentProfit(doc);
 
@@ -3021,8 +3096,13 @@ class DatabaseManager {
   }
 
   updateDocument(id, updated) {
+    if (!Array.isArray(this.data.documents)) this.data.documents = [];
     const idx = this.data.documents.findIndex(d => d.id === id);
     if (idx !== -1) {
+      this.unmarkDeleted(id);
+      if (this.data.documents[idx].docNumber) this.unmarkDeleted(this.data.documents[idx].docNumber);
+      if (updated.docNumber) this.unmarkDeleted(updated.docNumber);
+      updated._localModifiedAt = Date.now();
       const prevDoc = this.data.documents[idx];
       this.data.documents[idx] = { ...prevDoc, ...updated };
       const doc = this.data.documents[idx];

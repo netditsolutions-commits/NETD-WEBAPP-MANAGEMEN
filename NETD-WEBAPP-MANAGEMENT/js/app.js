@@ -3286,6 +3286,10 @@ const App = {
         if (createdProd && res.value.imageUrl && typeof window.db.setProductImageCache === 'function') {
           window.db.setProductImageCache(createdProd.id, res.value.imageUrl);
         }
+        this.productFilterTab = 'in_stock';
+        this.productPage = 1;
+        this.selectedCategoryId = 'all';
+        this.productSearchQuery = '';
         Swal.fire({ title: 'ເພີ່ມສິນຄ້າສຳເລັດ!', icon: 'success', timer: 1500, showConfirmButton: false, customClass: { popup: 'swal-glass' } });
         this.renderCurrentView();
       }
@@ -6418,6 +6422,10 @@ const App = {
           showConfirmButton: false,
           customClass: { popup: 'swal-glass' }
         });
+        if (this.docFilterTab !== 'all' && this.docFilterTab !== 'invoice') this.docFilterTab = 'invoice';
+        if (this.docFilterMonth !== 'all' && res.value.date && !res.value.date.startsWith(this.docFilterMonth)) this.docFilterMonth = 'all';
+        this.docPage = 1;
+        this.docSearchQuery = '';
         this.renderCurrentView();
       }
     });
@@ -6817,6 +6825,10 @@ const App = {
           }
         });
 
+        if (this.docFilterTab !== 'all' && this.docFilterTab !== 'delivery') this.docFilterTab = 'delivery';
+        if (this.docFilterMonth !== 'all' && res.value.date && !res.value.date.startsWith(this.docFilterMonth)) this.docFilterMonth = 'all';
+        this.docPage = 1;
+        this.docSearchQuery = '';
         this.renderCurrentView();
       }
     });
@@ -7150,6 +7162,7 @@ const App = {
         }
 
         // Immediately refresh current view so the new POS document appears right away
+        if (this.docFilterMonth !== 'all' && res.value.date && !res.value.date.startsWith(this.docFilterMonth)) this.docFilterMonth = 'all';
         this.renderCurrentView();
 
         Swal.fire({
@@ -7617,6 +7630,12 @@ const App = {
     }).then(res => {
       if (res.isConfirmed && res.value) {
         window.db.addPurchaseOrder(res.value);
+        if (this.docFilterTab !== 'all' && this.docFilterTab !== 'po') this.docFilterTab = 'po';
+        if (this.docFilterMonth !== 'all' && res.value.orderDate && !res.value.orderDate.startsWith(this.docFilterMonth)) this.docFilterMonth = 'all';
+        this.docPoPage = 1;
+        this.docSearchQuery = '';
+        this.renderCurrentView();
+
         Swal.fire({
           title: 'ສ້າງໃບສັ່ງຊື້ສຳເລັດ!',
           html: `
@@ -8107,6 +8126,10 @@ const App = {
     }).then(res => {
       if (res.isConfirmed && res.value) {
         window.db.addDocument(res.value);
+        if (this.docFilterTab !== 'all' && this.docFilterTab !== 'quotation') this.docFilterTab = 'quotation';
+        if (this.docFilterMonth !== 'all' && res.value.date && !res.value.date.startsWith(this.docFilterMonth)) this.docFilterMonth = 'all';
+        this.docPage = 1;
+        this.docSearchQuery = '';
         this.renderCurrentView();
       }
     });
