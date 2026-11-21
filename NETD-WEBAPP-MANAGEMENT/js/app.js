@@ -2389,21 +2389,23 @@ const App = {
              class="glass-panel glass-panel-hover p-4 cursor-pointer relative border ${isSelected ? 'border-sky-400 bg-sky-500/20' : 'border-white/10'}">
           <div class="flex items-center justify-between mb-2">
             <h4 class="text-sm font-bold line-clamp-1">${cat.name}</h4>
-            <div class="flex items-center gap-1.5 shrink-0">
-              <span class="badge-glass-cyan text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
-                ${stats.skuCount} SKU
-              </span>
-              ${this.canManage('products') ? `
-                <button onclick="event.stopPropagation(); App.openEditCategoryPrompt('${cat.id}')" class="p-1 text-sky-400 hover:text-sky-300 transition" title="ແກ້ໄຂໝວດສິນຄ້າ"><i class="fa-solid fa-pen text-xs"></i></button>
-                <button onclick="event.stopPropagation(); App.confirmDeleteCategory('${cat.id}')" class="p-1 text-rose-400 hover:text-rose-300 transition" title="ລຶບໝວດສິນຄ້າ"><i class="fa-solid fa-trash text-xs"></i></button>
-              ` : ''}
-            </div>
+            <span class="badge-glass-cyan text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
+              ${stats.skuCount} SKU
+            </span>
           </div>
           <div class="text-xs opacity-80 mb-1">
             ຈຳນວນໃນສະຕອກ: <strong class="text-emerald-400 text-sm">${stats.stockQty}</strong>
           </div>
-          <div class="text-xs opacity-80">
-            ມູນຄ່າລວມ: <strong class="text-sky-400 font-bold">${stats.valuation.toLocaleString()} ₭</strong>
+          <div class="flex items-center justify-between text-xs opacity-80 pt-1.5 border-t border-slate-200/50 dark:border-white/5">
+            <div>
+              ມູນຄ່າລວມ: <strong class="text-sky-400 font-bold">${stats.valuation.toLocaleString()} ₭</strong>
+            </div>
+            ${this.canManage('products') ? `
+              <div class="flex items-center gap-1 shrink-0 ml-2">
+                <button onclick="event.stopPropagation(); App.openEditCategoryPrompt('${cat.id}')" class="p-1 text-sky-400 hover:text-sky-300 hover:bg-sky-400/10 rounded transition" title="ແກ້ໄຂໝວດສິນຄ້າ"><i class="fa-solid fa-pen text-xs"></i></button>
+                <button onclick="event.stopPropagation(); App.confirmDeleteCategory('${cat.id}')" class="p-1 text-rose-400 hover:text-rose-300 hover:bg-rose-400/10 rounded transition" title="ລຶບໝວດສິນຄ້າ"><i class="fa-solid fa-trash text-xs"></i></button>
+              </div>
+            ` : ''}
           </div>
         </div>
       `;
@@ -2514,7 +2516,7 @@ const App = {
             </div>
           </div>
 
-          <div id="product-table-container" class="mt-4 overflow-x-auto">
+          <div id="product-table-container" class="mt-4">
             ${this.renderProductTableContent()}
           </div>
         </div>
@@ -2608,7 +2610,8 @@ const App = {
       }
 
       return `
-        <table class="glass-table">
+        <div class="overflow-x-auto">
+          <table class="glass-table">
           <thead>
             <tr>
               <th style="width: 45px;" class="text-center">ລ/ດ</th>
@@ -2692,6 +2695,7 @@ const App = {
             }).join('')}
           </tbody>
         </table>
+        </div>
         ${this.renderPagination(totalItems, this.productPage, pageSize, 'App.setProductPage')}
       `;
     }
@@ -2774,7 +2778,8 @@ const App = {
       const startIdx = (this.productPage - 1) * pageSize;
 
       return `
-        <table class="glass-table">
+        <div class="overflow-x-auto">
+          <table class="glass-table">
           <thead>
             <tr>
               <th style="width: 45px;" class="text-center">ລ/ດ</th>
@@ -2814,6 +2819,7 @@ const App = {
             }).join('')}
           </tbody>
         </table>
+        </div>
         ${this.renderPagination(totalItems, this.productPage, pageSize, 'App.setProductPage')}
       `;
     }
