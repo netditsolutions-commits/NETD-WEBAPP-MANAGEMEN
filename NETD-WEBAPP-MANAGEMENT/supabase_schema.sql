@@ -248,6 +248,7 @@ CREATE TABLE IF NOT EXISTS public.project_categories (
     name TEXT NOT NULL,
     code TEXT,
     color TEXT DEFAULT 'sky',
+    description TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -440,7 +441,7 @@ DECLARE
     tables text[] := ARRAY[
         'settings', 'employees', 'customers', 'categories', 'brands', 'suppliers',
         'products', 'product_serials', 'inventory_logs', 'purchase_orders',
-        'documents', 'document_items', 'projects', 'project_tasks',
+        'documents', 'document_items', 'project_categories', 'projects', 'project_tasks',
         'it_job_categories', 'it_jobs', 'transactions', 'client_systems', 'activity_logs'
     ];
 BEGIN
@@ -463,7 +464,7 @@ DECLARE
     tables text[] := ARRAY[
         'settings', 'employees', 'customers', 'categories', 'brands', 'suppliers',
         'products', 'product_serials', 'inventory_logs', 'purchase_orders',
-        'documents', 'document_items', 'projects', 'project_tasks',
+        'documents', 'document_items', 'project_categories', 'projects', 'project_tasks',
         'it_job_categories', 'it_jobs', 'transactions', 'client_systems', 'activity_logs'
     ];
 BEGIN
