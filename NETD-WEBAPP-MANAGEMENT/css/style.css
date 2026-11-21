@@ -688,3 +688,8 @@ i.fa, i.fas, i.far, i.fab, i.fa-solid, i.fa-regular, i.fa-brands, [class*="fa-"]
   -webkit-overflow-scrolling: touch;
 }
 
+#product-table-container {
+  overflow: visible !important;
+}
+
+
