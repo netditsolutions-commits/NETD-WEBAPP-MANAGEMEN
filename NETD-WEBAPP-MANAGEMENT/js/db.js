@@ -970,7 +970,11 @@ class DatabaseManager {
         await this.initSupabase(cleanUrl, res.supabaseAnonKey.trim());
         if (window.App && typeof window.App.updateLiveHeader === 'function') {
           window.App.updateLiveHeader();
-          window.App.renderCurrentView();
+          if (typeof window.App.scheduleRenderCurrentView === 'function') {
+            window.App.scheduleRenderCurrentView(150);
+          } else {
+            window.App.renderCurrentView();
+          }
         }
       }
     } catch (err) {
@@ -1002,13 +1006,24 @@ class DatabaseManager {
   }
 
   reloadLocalDataSilently() {
-    try {
-      const stored = localStorage.getItem(DB_STORAGE_KEY);
-      if (stored) {
-        this.data = JSON.parse(stored);
-        this.listeners.forEach(fn => fn(this.data));
-      }
-    } catch (e) {}
+    if (this._reloadSilentTimer) clearTimeout(this._reloadSilentTimer);
+    this._reloadSilentTimer = setTimeout(() => {
+      try {
+        const stored = localStorage.getItem(DB_STORAGE_KEY);
+        if (stored) {
+          this.data = JSON.parse(stored);
+          this.listeners.forEach(fn => fn(this.data));
+        }
+      } catch (e) {}
+    }, 100);
+  }
+
+  notifyFromRealtime() {
+    if (this._realtimeNotifyTimer) clearTimeout(this._realtimeNotifyTimer);
+    this._realtimeNotifyTimer = setTimeout(() => {
+      this.saveLocal();
+      this.listeners.forEach(fn => fn(this.data));
+    }, 150);
   }
 
   getProductImageCache(productId) {
@@ -1473,7 +1488,7 @@ class DatabaseManager {
     if (clientKey === 'settings') {
       if (newRecord) {
         this.data.settings = { ...this.data.settings, ...newRecord };
-        this.notify(true, true);
+        this.notifyFromRealtime();
       }
       return;
     }
@@ -1515,7 +1530,7 @@ class DatabaseManager {
         this.data[clientKey][idx] = { ...this.data[clientKey][idx], ...newRecord };
       }
       this.data[clientKey] = sortByNewest(this.data[clientKey]);
-      this.notify(true, true);
+      this.notifyFromRealtime();
     } else if (eventType === 'UPDATE' && newRecord) {
       const idx = this.data[clientKey].findIndex(item => item.id === newRecord.id);
       if (idx !== -1) {
@@ -1550,7 +1565,7 @@ class DatabaseManager {
         this.data[clientKey].push(newRecord);
       }
       this.data[clientKey] = sortByNewest(this.data[clientKey]);
-      this.notify(true, true);
+      this.notifyFromRealtime();
     } else if (eventType === 'DELETE' && oldRecord && oldRecord.id) {
       this.markAsDeleted(oldRecord.id);
       this.data[clientKey] = this.data[clientKey].filter(item => item.id !== oldRecord.id);
@@ -1558,8 +1573,7 @@ class DatabaseManager {
         if (this.data.developedSystems) this.data.developedSystems = this.data.developedSystems.filter(s => s && s.id !== oldRecord.id);
         if (this.data.systemCustomers) this.data.systemCustomers = this.data.systemCustomers.filter(s => s && s.id !== oldRecord.id);
       }
-      this.saveLocal();
-      this.notify(true, true);
+      this.notifyFromRealtime();
     }
   }
 

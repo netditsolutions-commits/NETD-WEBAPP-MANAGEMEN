@@ -267,7 +267,7 @@ const App = {
           if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT')) {
             return;
           }
-          this.renderCurrentView();
+          this.scheduleRenderCurrentView(150);
         } catch (e) {}
       });
     }
@@ -276,7 +276,7 @@ const App = {
     this.pullLatestDataQuietly().then(() => {
       try {
         if (this.currentView !== 'settings') {
-          this.renderCurrentView();
+          this.scheduleRenderCurrentView(150);
         }
       } catch (e) {}
     });
@@ -342,6 +342,12 @@ const App = {
     this.applyTheme(nextTheme);
     window.db.updateSettings({ theme: nextTheme });
     localStorage.setItem('netd_theme', nextTheme);
+    Object.values(this.charts).forEach(c => {
+      try { c.destroy(); } catch (e) {}
+    });
+    this.charts = {};
+    const root = document.getElementById('dashboard-view-root');
+    if (root) root.remove();
     this.renderCurrentView();
   },
 
@@ -1393,14 +1399,24 @@ const App = {
     this.renderCurrentView();
   },
 
+  scheduleRenderCurrentView(delay = 150) {
+    if (this._renderDebounceTimer) clearTimeout(this._renderDebounceTimer);
+    this._renderDebounceTimer = setTimeout(() => {
+      this.renderCurrentView();
+    }, delay);
+  },
+
   renderCurrentView() {
     const container = document.getElementById('main-content-view');
     if (!container) return;
 
-    Object.values(this.charts).forEach(c => {
-      try { c.destroy(); } catch (e) {}
-    });
-    this.charts = {};
+    // Only destroy dashboard charts if leaving the dashboard view
+    if (this.currentView !== 'dashboard') {
+      Object.values(this.charts).forEach(c => {
+        try { c.destroy(); } catch (e) {}
+      });
+      this.charts = {};
+    }
 
     switch (this.currentView) {
       case 'dashboard':
@@ -1444,6 +1460,229 @@ const App = {
   // --------------------------------------------------------------------------
   // VIEW 1: DASHBOARD (ພ້ອມຕົວກອງເດືອນ 1 ຫາ 12 ແລະ ຕົວກອງປີສຳລັບກຣາຟ)
   // --------------------------------------------------------------------------
+  renderDashboardAlerts(overdueInvoices, overdueTotal, expiringSystems) {
+    if (overdueInvoices.length === 0 && expiringSystems.length === 0) return '';
+    return `
+      <div class="space-y-3">
+        ${overdueInvoices.length > 0 ? `
+          <div class="p-4 rounded-2xl bg-gradient-to-r from-rose-500/20 via-rose-500/10 to-transparent border border-rose-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 text-lg border border-rose-500/30">
+                <i class="fa-solid fa-triangle-exclamation animate-bounce"></i>
+              </div>
+              <div>
+                <h4 class="font-black text-rose-300 text-sm flex items-center gap-2">
+                  ແຈ້ງເຕືອນ: ມີໃບເກັບເງິນກາຍກຳນົດຊຳລະ ${overdueInvoices.length} ສະບັບ!
+                </h4>
+                <p class="text-xs text-rose-200/80 mt-0.5">
+                  ຍອດເງິນທີ່ລໍຖ້າຮັບທັງໝົດ: <strong class="text-white font-mono font-bold">${overdueTotal.toLocaleString()} ₭</strong> (ກະລຸນາກວດສອບ ແລະ ຕິດຕາມລູກຄ້າ)
+                </p>
+              </div>
+            </div>
+            <button onclick="App.filterOverdueDocs()" class="btn-glass-danger text-xs py-1.5 px-3.5 whitespace-nowrap self-end sm:self-auto flex items-center gap-1.5 shadow-sm">
+              <span>ກວດເບິ່ງໃບບິນທີ່ກາຍກຳນົດ</span>
+              <i class="fa-solid fa-arrow-right text-[11px]"></i>
+            </button>
+          </div>
+        ` : ''}
+
+        ${expiringSystems.length > 0 ? `
+          <div class="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 text-lg border border-amber-500/30">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+              </div>
+              <div>
+                <h4 class="font-black text-amber-300 text-sm flex items-center gap-2">
+                  ແຈ້ງເຕືອນ: ລະບົບລູກຄ້າ (Domain / Hosting / SLA) ໃກ້ຈະໝົດອາຍຸ ${expiringSystems.length} ລະບົບ!
+                </h4>
+                <p class="text-xs text-amber-200/80 mt-0.5">
+                  ລະບົບທີ່ມີກຳນົດຕໍ່ອາຍຸພາຍໃນ 30 ວັນ: <strong>${expiringSystems.map(s => s.systemName).slice(0, 3).join(', ')}${expiringSystems.length > 3 ? '...' : ''}</strong>
+                </p>
+              </div>
+            </div>
+            <button onclick="App.switchView('client-systems')" class="btn-glass-secondary border-amber-400/40 text-amber-300 hover:bg-amber-500/20 text-xs py-1.5 px-3.5 whitespace-nowrap self-end sm:self-auto flex items-center gap-1.5 shadow-sm">
+              <span>ຈັດການລະບົບທີ່ໃກ້ໝົດອາຍຸ</span>
+              <i class="fa-solid fa-arrow-right text-[11px]"></i>
+            </button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  },
+
+  renderDashboardStatCards(c) {
+    return `
+      <!-- Card 1: ໂຄງການໄອທີ (Projects) - ກອງເດືອນ 1 ຫາ 12 -->
+      <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
+              <i class="fa-solid fa-diagram-project text-sky-400"></i> ໂຄງການໄອທີ
+            </span>
+            <select onchange="App.setCardFilter('projects', this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold">
+              ${c.buildMonthOptions(c.cf.projects)}
+            </select>
+          </div>
+          <div class="text-3xl font-black">${c.c1Total} <span class="text-xs font-normal opacity-70">ໂຄງການ</span></div>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
+          <span class="text-emerald-400 font-bold">ສຳເລັດ: ${c.c1Completed}</span>
+          <span class="text-amber-400 font-bold">ກຳລັງເຮັດ: ${c.c1InProgress}</span>
+        </div>
+      </div>
+
+      <!-- Card 2: ໜ້າວຽກໄອທີ (IT Service Jobs) - ກອງເດືອນ 1 ຫາ 12 -->
+      <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between border-teal-500/20">
+        <div>
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
+              <i class="fa-solid fa-wrench text-teal-400"></i> ໜ້າວຽກໄອທີ
+            </span>
+            <select onchange="App.setCardFilter('itJobs', this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold">
+              ${c.buildMonthOptions(c.cf.itJobs)}
+            </select>
+          </div>
+          <div class="text-3xl font-black text-teal-400">${c.c2Total} <span class="text-xs font-normal opacity-70 text-slate-300">Jobs</span></div>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/10 flex justify-between items-center text-xs">
+          <span class="text-emerald-400 font-bold">ສຳເລັດ: ${c.c2Completed}</span>
+          <span class="text-sky-400 cursor-pointer hover:underline font-bold" onclick="App.switchView('it-jobs')">ເບິ່ງວຽກ →</span>
+        </div>
+      </div>
+
+      <!-- Card 3: ໃບບິນ ແລະ ເອກະສານ - ກອງເດືອນ 1 ຫາ 12 -->
+      <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
+              <i class="fa-solid fa-file-invoice-dollar text-purple-400"></i> ໃບບິນ/ເອກະສານ
+            </span>
+            <select onchange="App.setCardFilter('docs', this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold">
+              ${c.buildMonthOptions(c.cf.docs)}
+            </select>
+          </div>
+          <div class="text-3xl font-black">${c.c3Total} <span class="text-xs font-normal opacity-70">ສະບັບ</span></div>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
+          <span class="text-emerald-400 font-bold">ບິນຮັບ: ${c.c3Invoices}</span>
+          <span class="text-sky-400 font-bold">ໃບສະເໜີ: ${c.c3Quotations}</span>
+        </div>
+      </div>
+
+      <!-- Card 4: ລວມຍອດລາຍຮັບ - ກອງເດືອນ 1 ຫາ 12 -->
+      <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between border-emerald-500/25">
+        <div>
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
+              <i class="fa-solid fa-arrow-trend-up text-emerald-400"></i> ລວມຍອດລາຍຮັບ
+            </span>
+            <select onchange="App.setFinancialFilter(this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold text-emerald-400">
+              ${c.buildMonthOptions(c.cf.income)}
+            </select>
+          </div>
+          <div class="text-2xl font-black text-emerald-400">${c.totalIncome.toLocaleString()} <span class="text-xs font-normal opacity-70">₭</span></div>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
+          <span>ບໍລິການ: <strong>${c.serviceIncome.toLocaleString()}</strong></span>
+          <span>ຂາຍ: <strong>${c.productIncome.toLocaleString()}</strong></span>
+        </div>
+      </div>
+
+      <!-- Card 5: ຍອດລາຍຈ່າຍລວມ - ກອງເດືອນ 1 ຫາ 12 -->
+      <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between border-rose-500/25">
+        <div>
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
+              <i class="fa-solid fa-arrow-trend-down text-rose-400"></i> ຍອດລາຍຈ່າຍລວມ
+            </span>
+            <select onchange="App.setFinancialFilter(this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold text-rose-400">
+              ${c.buildMonthOptions(c.cf.expense)}
+            </select>
+          </div>
+          <div class="text-2xl font-black text-rose-400">${c.totalExpense.toLocaleString()} <span class="text-xs font-normal opacity-70">₭</span></div>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
+          <span>ຕົ້ນທຶນ/PO: <strong>${c.cogsExpense.toLocaleString()}</strong></span>
+          <span>ອື່ນໆ: <strong>${c.otherExpense.toLocaleString()}</strong></span>
+        </div>
+      </div>
+
+      <!-- Card 6: ກຳໄລສຸດທິ (Net Profit) - ກອງເດືອນ 1 ຫາ 12 -->
+      <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between ${c.netProfit >= 0 ? 'border-sky-500/30' : 'border-rose-500/30'}">
+        <div>
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
+              <i class="fa-solid fa-scale-balanced ${c.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}"></i> ກຳໄລສຸດທິ (Net Profit)
+            </span>
+            <select onchange="App.setFinancialFilter(this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold text-sky-400">
+              ${c.buildMonthOptions(c.cf.income)}
+            </select>
+          </div>
+          <div class="text-2xl font-black ${c.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+            ${c.netProfit >= 0 ? '+' : ''}${c.netProfit.toLocaleString()} <span class="text-xs font-normal opacity-70">₭</span>
+          </div>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
+          <span title="ກຳໄລລວມຈາກແຕ່ລະໃບບິນ">ກຳໄລຈາກບິນ: <strong>${c.incomeTxsCount} ບິນ</strong></span>
+          <span class="${c.netProfit >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}">
+            ${c.netProfit >= 0 ? '✓ ມີກຳໄລ' : '⚠️ ຂາດທຶນ'}
+          </span>
+        </div>
+      </div>
+
+      <!-- Card 7: ສິນຄ້າໃນສະຕອກ (Realtime ບໍ່ຕ້ອງມີການກອງ) -->
+      <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
+              <i class="fa-solid fa-boxes-stacked text-amber-400"></i> ສິນຄ້າໃນສະຕອກ
+            </span>
+            <span class="badge-glass-amber text-[10px] px-2 py-0.5 rounded font-bold">Realtime</span>
+          </div>
+          <div class="text-3xl font-black">${c.totalStockQty} <span class="text-xs font-normal opacity-70">ຊິ້ນ</span></div>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
+          <span>${c.productsCount} SKU</span>
+          <span class="text-amber-400 cursor-pointer hover:underline font-bold" onclick="App.switchView('products')">ຈັດການ →</span>
+        </div>
+      </div>
+
+      <!-- Card 8: ສິນຄ້າກຳລັງສັ່ງຊື້ (PO) (Realtime ບໍ່ຕ້ອງມີການກອງ) -->
+      <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
+              <i class="fa-solid fa-truck-fast text-indigo-400"></i> ກຳລັງສັ່ງຊື້ (PO)
+            </span>
+            <span class="badge-glass-cyan text-[10px] px-2 py-0.5 rounded font-bold">Realtime</span>
+          </div>
+          <div class="text-3xl font-black text-indigo-400">${c.card7POsCount} <span class="text-xs font-normal opacity-70 text-slate-300">ໃບສັ່ງຊື້</span></div>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
+          <span class="text-amber-400 font-bold">ສັ່ງຊື້: ${c.poOrderedCount} | ຮັບ: ${c.poReceivedCount}</span>
+          <span class="text-sky-400 cursor-pointer hover:underline font-bold" onclick="App.setDocTab('po'); App.switchView('documents')">ເບິ່ງ PO →</span>
+        </div>
+      </div>
+
+      <!-- Card 9: ມູນຄ່າສິນຄ້າລວມໃນສາງ (Realtime ບໍ່ຕ້ອງມີການກອງ) -->
+      <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between gap-1 mb-2">
+            <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
+              <i class="fa-solid fa-vault text-cyan-400"></i> ມູນຄ່າສິນຄ້າໃນສາງ
+            </span>
+            <span class="badge-glass-cyan text-[10px] px-2 py-0.5 rounded font-mono font-bold">ຕົ້ນທຶນຕົວຈິງ</span>
+          </div>
+          <div class="text-2xl font-black text-cyan-400">${c.totalStockValue.toLocaleString()} <span class="text-xs font-normal opacity-70">₭</span></div>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
+          <span class="opacity-75">ມູນຄ່າລວມສາງ</span>
+          <span class="text-emerald-400 cursor-pointer hover:underline font-bold" onclick="App.switchView('products')">ເບິ່ງລາຍລະອຽດ →</span>
+        </div>
+      </div>
+    `;
+  },
   renderDashboard(container) {
     const data = (window.db && window.db.data) ? window.db.data : {};
     data.projects = data.projects || [];
@@ -1599,9 +1838,56 @@ const App = {
       return s.expiryDate <= next30DaysStr;
     });
 
+    const cardParams = {
+      buildMonthOptions, cf,
+      c1Total, c1Completed, c1InProgress,
+      c2Total, c2Completed, c2Pending,
+      c3Total, c3Invoices, c3Quotations,
+      totalIncome, serviceIncome, productIncome,
+      totalExpense, cogsExpense, otherExpense,
+      netProfit, profitMargin, incomeTxsCount: incomeTxs.length,
+      totalStockQty, productsCount: (data.products || []).length,
+      card7POsCount: card7POs.length, poOrderedCount, poReceivedCount,
+      totalStockValue
+    };
+
+    const existingRoot = document.getElementById('dashboard-view-root');
+    const existingMonthlyCanvas = document.getElementById('chart-monthly-income-expense');
+
+    if (existingRoot && existingMonthlyCanvas && container.contains(existingRoot)) {
+      // In-place DOM updates: NEVER replace container.innerHTML when staying on dashboard!
+      const alertsEl = document.getElementById('dashboard-alerts-container');
+      if (alertsEl) alertsEl.innerHTML = this.renderDashboardAlerts(overdueInvoices, overdueTotal, expiringSystems);
+
+      const statsEl = document.getElementById('dashboard-stat-cards-container');
+      if (statsEl) statsEl.innerHTML = this.renderDashboardStatCards(cardParams);
+
+      const lowStockEl = document.getElementById('dashboard-low-stock-container');
+      if (lowStockEl) lowStockEl.innerHTML = this.renderLowStockList(data);
+
+      const deadlinesEl = document.getElementById('dashboard-deadlines-container');
+      if (deadlinesEl) deadlinesEl.innerHTML = this.renderProjectDeadlines(data);
+
+      const activityEl = document.getElementById('dashboard-activity-container');
+      if (activityEl) activityEl.innerHTML = this.renderActivityLogs(data);
+
+      const yearSelect = document.getElementById('chart-year-select');
+      if (yearSelect && yearSelect.value !== this.selectedChartYear) {
+        yearSelect.value = this.selectedChartYear;
+      }
+
+      // Smoothly update Chart data in-place without deleting canvas or restarting animations
+      if (this.charts && this.charts.monthly) {
+        this.updateDashboardChartsInPlace(data);
+      } else {
+        this.initDashboardCharts(data);
+      }
+      return;
+    }
+
     container.innerHTML = `
-      <div class="space-y-6">
-        <!-- Dashboard Top Header Bar (ເອົາປຸ່ມທີ່ໝາຍຄູນອອກຕາມຮູບ) -->
+      <div id="dashboard-view-root" class="space-y-6">
+        <!-- Dashboard Top Header Bar -->
         <div class="glass-panel p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 class="text-2xl font-black tracking-tight flex items-center gap-3">
@@ -1613,230 +1899,16 @@ const App = {
         </div>
 
         <!-- Real-time Alerts: Overdue Invoices & Expiring Client Systems -->
-        ${overdueInvoices.length > 0 || expiringSystems.length > 0 ? `
-          <div class="space-y-3">
-            ${overdueInvoices.length > 0 ? `
-              <div class="p-4 rounded-2xl bg-gradient-to-r from-rose-500/20 via-rose-500/10 to-transparent border border-rose-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 text-lg border border-rose-500/30">
-                    <i class="fa-solid fa-triangle-exclamation animate-bounce"></i>
-                  </div>
-                  <div>
-                    <h4 class="font-black text-rose-300 text-sm flex items-center gap-2">
-                      ແຈ້ງເຕືອນ: ມີໃບເກັບເງິນກາຍກຳນົດຊຳລະ ${overdueInvoices.length} ສະບັບ!
-                    </h4>
-                    <p class="text-xs text-rose-200/80 mt-0.5">
-                      ຍອດເງິນທີ່ລໍຖ້າຮັບທັງໝົດ: <strong class="text-white font-mono font-bold">${overdueTotal.toLocaleString()} ₭</strong> (ກະລຸນາກວດສອບ ແລະ ຕິດຕາມລູກຄ້າ)
-                    </p>
-                  </div>
-                </div>
-                <button onclick="App.filterOverdueDocs()" class="btn-glass-danger text-xs py-1.5 px-3.5 whitespace-nowrap self-end sm:self-auto flex items-center gap-1.5 shadow-sm">
-                  <span>ກວດເບິ່ງໃບບິນທີ່ກາຍກຳນົດ</span>
-                  <i class="fa-solid fa-arrow-right text-[11px]"></i>
-                </button>
-              </div>
-            ` : ''}
-
-            ${expiringSystems.length > 0 ? `
-              <div class="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 text-lg border border-amber-500/30">
-                    <i class="fa-solid fa-clock-rotate-left"></i>
-                  </div>
-                  <div>
-                    <h4 class="font-black text-amber-300 text-sm flex items-center gap-2">
-                      ແຈ້ງເຕືອນ: ລະບົບລູກຄ້າ (Domain / Hosting / SLA) ໃກ້ຈະໝົດອາຍຸ ${expiringSystems.length} ລະບົບ!
-                    </h4>
-                    <p class="text-xs text-amber-200/80 mt-0.5">
-                      ລະບົບທີ່ມີກຳນົດຕໍ່ອາຍຸພາຍໃນ 30 ວັນ: <strong>${expiringSystems.map(s => s.systemName).slice(0, 3).join(', ')}${expiringSystems.length > 3 ? '...' : ''}</strong>
-                    </p>
-                  </div>
-                </div>
-                <button onclick="App.switchView('client-systems')" class="btn-glass-secondary border-amber-400/40 text-amber-300 hover:bg-amber-500/20 text-xs py-1.5 px-3.5 whitespace-nowrap self-end sm:self-auto flex items-center gap-1.5 shadow-sm">
-                  <span>ຈັດການລະບົບທີ່ໃກ້ໝົດອາຍຸ</span>
-                  <i class="fa-solid fa-arrow-right text-[11px]"></i>
-                </button>
-              </div>
-            ` : ''}
-          </div>
-        ` : ''}
-
-        <!-- 9 STAT CARDS: ROWS 1 & 2 FILTERED BY MONTH 1-12 (INCOME, EXPENSE, NET PROFIT SYNCED), ROW 3 REALTIME INVENTORY -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          
-          <!-- Card 1: ໂຄງການໄອທີ (Projects) - ກອງເດືອນ 1 ຫາ 12 -->
-          <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
-            <div>
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
-                  <i class="fa-solid fa-diagram-project text-sky-400"></i> ໂຄງການໄອທີ
-                </span>
-                <select onchange="App.setCardFilter('projects', this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold">
-                  ${buildMonthOptions(cf.projects)}
-                </select>
-              </div>
-              <div class="text-3xl font-black">${c1Total} <span class="text-xs font-normal opacity-70">ໂຄງການ</span></div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
-              <span class="text-emerald-400 font-bold">ສຳເລັດ: ${c1Completed}</span>
-              <span class="text-amber-400 font-bold">ກຳລັງເຮັດ: ${c1InProgress}</span>
-            </div>
-          </div>
-
-          <!-- Card 2: ໜ້າວຽກໄອທີ (IT Service Jobs) - ກອງເດືອນ 1 ຫາ 12 -->
-          <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between border-teal-500/20">
-            <div>
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
-                  <i class="fa-solid fa-wrench text-teal-400"></i> ໜ້າວຽກໄອທີ
-                </span>
-                <select onchange="App.setCardFilter('itJobs', this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold">
-                  ${buildMonthOptions(cf.itJobs)}
-                </select>
-              </div>
-              <div class="text-3xl font-black text-teal-400">${c2Total} <span class="text-xs font-normal opacity-70 text-slate-300">Jobs</span></div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-white/10 flex justify-between items-center text-xs">
-              <span class="text-emerald-400 font-bold">ສຳເລັດ: ${c2Completed}</span>
-              <span class="text-sky-400 cursor-pointer hover:underline font-bold" onclick="App.switchView('it-jobs')">ເບິ່ງວຽກ →</span>
-            </div>
-          </div>
-
-          <!-- Card 3: ໃບບິນ ແລະ ເອກະສານ - ກອງເດືອນ 1 ຫາ 12 -->
-          <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
-            <div>
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
-                  <i class="fa-solid fa-file-invoice-dollar text-purple-400"></i> ໃບບິນ/ເອກະສານ
-                </span>
-                <select onchange="App.setCardFilter('docs', this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold">
-                  ${buildMonthOptions(cf.docs)}
-                </select>
-              </div>
-              <div class="text-3xl font-black">${c3Total} <span class="text-xs font-normal opacity-70">ສະບັບ</span></div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
-              <span class="text-emerald-400 font-bold">ບິນຮັບ: ${c3Invoices}</span>
-              <span class="text-sky-400 font-bold">ໃບສະເໜີ: ${c3Quotations}</span>
-            </div>
-          </div>
-
-          <!-- Card 4: ລວມຍອດລາຍຮັບ - ກອງເດືອນ 1 ຫາ 12 -->
-          <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between border-emerald-500/25">
-            <div>
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
-                  <i class="fa-solid fa-arrow-trend-up text-emerald-400"></i> ລວມຍອດລາຍຮັບ
-                </span>
-                <select onchange="App.setFinancialFilter(this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold text-emerald-400">
-                  ${buildMonthOptions(cf.income)}
-                </select>
-              </div>
-              <div class="text-2xl font-black text-emerald-400">${totalIncome.toLocaleString()} <span class="text-xs font-normal opacity-70">₭</span></div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
-              <span>ບໍລິການ: <strong>${serviceIncome.toLocaleString()}</strong></span>
-              <span>ຂາຍ: <strong>${productIncome.toLocaleString()}</strong></span>
-            </div>
-          </div>
-
-          <!-- Card 5: ຍອດລາຍຈ່າຍລວມ - ກອງເດືອນ 1 ຫາ 12 -->
-          <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between border-rose-500/25">
-            <div>
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
-                  <i class="fa-solid fa-arrow-trend-down text-rose-400"></i> ຍອດລາຍຈ່າຍລວມ
-                </span>
-                <select onchange="App.setFinancialFilter(this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold text-rose-400">
-                  ${buildMonthOptions(cf.expense)}
-                </select>
-              </div>
-              <div class="text-2xl font-black text-rose-400">${totalExpense.toLocaleString()} <span class="text-xs font-normal opacity-70">₭</span></div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
-              <span>ຕົ້ນທຶນ/PO: <strong>${cogsExpense.toLocaleString()}</strong></span>
-              <span>ອື່ນໆ: <strong>${otherExpense.toLocaleString()}</strong></span>
-            </div>
-          </div>
-
-          <!-- Card 6: ກຳໄລສຸດທິ (Net Profit) - ກອງເດືອນ 1 ຫາ 12 -->
-          <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between ${netProfit >= 0 ? 'border-sky-500/30' : 'border-rose-500/30'}">
-            <div>
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
-                  <i class="fa-solid fa-scale-balanced ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}"></i> ກຳໄລສຸດທິ (Net Profit)
-                </span>
-                <select onchange="App.setFinancialFilter(this.value)" class="glass-input py-0.5 px-1.5 text-[11px] font-bold text-sky-400">
-                  ${buildMonthOptions(cf.income)}
-                </select>
-              </div>
-              <div class="text-2xl font-black ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
-                ${netProfit >= 0 ? '+' : ''}${netProfit.toLocaleString()} <span class="text-xs font-normal opacity-70">₭</span>
-              </div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
-              <span title="ກຳໄລລວມຈາກແຕ່ລະໃບບິນ">ກຳໄລຈາກບິນ: <strong>${incomeTxs.length} ບິນ</strong></span>
-              <span class="${netProfit >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}">
-                ${netProfit >= 0 ? '✓ ມີກຳໄລ' : '⚠️ ຂາດທຶນ'}
-              </span>
-            </div>
-          </div>
-
-          <!-- Card 7: ສິນຄ້າໃນສະຕອກ (Realtime ບໍ່ຕ້ອງມີການກອງ) -->
-          <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
-            <div>
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
-                  <i class="fa-solid fa-boxes-stacked text-amber-400"></i> ສິນຄ້າໃນສະຕອກ
-                </span>
-                <span class="badge-glass-amber text-[10px] px-2 py-0.5 rounded font-bold">Realtime</span>
-              </div>
-              <div class="text-3xl font-black">${totalStockQty} <span class="text-xs font-normal opacity-70">ຊິ້ນ</span></div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
-              <span>${data.products.length} SKU</span>
-              <span class="text-amber-400 cursor-pointer hover:underline font-bold" onclick="App.switchView('products')">ຈັດການ →</span>
-            </div>
-          </div>
-
-          <!-- Card 8: ສິນຄ້າກຳລັງສັ່ງຊື້ (PO) (Realtime ບໍ່ຕ້ອງມີການກອງ) -->
-          <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
-            <div>
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
-                  <i class="fa-solid fa-truck-fast text-indigo-400"></i> ກຳລັງສັ່ງຊື້ (PO)
-                </span>
-                <span class="badge-glass-cyan text-[10px] px-2 py-0.5 rounded font-bold">Realtime</span>
-              </div>
-              <div class="text-3xl font-black text-indigo-400">${card7POs.length} <span class="text-xs font-normal opacity-70 text-slate-300">ໃບສັ່ງຊື້</span></div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
-              <span class="text-amber-400 font-bold">ສັ່ງຊື້: ${poOrderedCount} | ຮັບ: ${poReceivedCount}</span>
-              <span class="text-sky-400 cursor-pointer hover:underline font-bold" onclick="App.setDocTab('po'); App.switchView('documents')">ເບິ່ງ PO →</span>
-            </div>
-          </div>
-
-          <!-- Card 9: ມູນຄ່າສິນຄ້າລວມໃນສາງ (Realtime ບໍ່ຕ້ອງມີການກອງ) -->
-          <div class="glass-panel glass-panel-hover p-4 flex flex-col justify-between">
-            <div>
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <span class="text-xs font-bold opacity-80 flex items-center gap-1.5">
-                  <i class="fa-solid fa-vault text-cyan-400"></i> ມູນຄ່າສິນຄ້າໃນສາງ
-                </span>
-                <span class="badge-glass-cyan text-[10px] px-2 py-0.5 rounded font-mono font-bold">ຕົ້ນທຶນຕົວຈິງ</span>
-              </div>
-              <div class="text-2xl font-black text-cyan-400">${totalStockValue.toLocaleString()} <span class="text-xs font-normal opacity-70">₭</span></div>
-            </div>
-            <div class="mt-3 pt-2 border-t border-white/10 flex justify-between text-xs">
-              <span class="opacity-75">ມູນຄ່າລວມສາງ</span>
-              <span class="text-emerald-400 cursor-pointer hover:underline font-bold" onclick="App.switchView('products')">ເບິ່ງລາຍລະອຽດ →</span>
-            </div>
-          </div>
-
+        <div id="dashboard-alerts-container">
+          ${this.renderDashboardAlerts(overdueInvoices, overdueTotal, expiringSystems)}
         </div>
 
+        <!-- 9 STAT CARDS -->
+        <div id="dashboard-stat-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          ${this.renderDashboardStatCards(cardParams)}
+        </div>
 
-        <!-- 4 CHARTS (ພ້ອມຕົວກອງປີສະເພາະກຣາຟລາຍຮັບ-ລາຍຈ່າຍ) -->
+        <!-- 4 CHARTS (Container ມີ relative w-full h-64 ເພື່ອບໍ່ໃຫ້ flex/resize observer ເຮັດໃຫ້ກຣາຟກະພີບ) -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <!-- Graph 1: ລາຍຮັບ-ລາຍຈ່າຍແຕ່ລະເດືອນ ພ້ອມຕົວກອງປີ -->
           <div class="glass-panel p-5">
@@ -1854,8 +1926,8 @@ const App = {
                 </select>
               </div>
             </div>
-            <div class="h-64">
-              <canvas id="chart-monthly-income-expense"></canvas>
+            <div class="relative w-full h-64">
+              <canvas id="chart-monthly-income-expense" class="w-full h-full block"></canvas>
             </div>
           </div>
 
@@ -1868,8 +1940,8 @@ const App = {
               </h3>
               <span class="badge-glass-purple text-xs px-2 py-0.5 rounded-full font-bold">ສາງສິນຄ້າ</span>
             </div>
-            <div class="h-64 flex items-center justify-center">
-              <canvas id="chart-stock-by-category"></canvas>
+            <div class="relative w-full h-64">
+              <canvas id="chart-stock-by-category" class="w-full h-full block"></canvas>
             </div>
           </div>
 
@@ -1882,8 +1954,8 @@ const App = {
               </h3>
               <span class="badge-glass-amber text-xs px-2 py-0.5 rounded-full font-bold">Qty</span>
             </div>
-            <div class="h-64">
-              <canvas id="chart-top-stock"></canvas>
+            <div class="relative w-full h-64">
+              <canvas id="chart-top-stock" class="w-full h-full block"></canvas>
             </div>
           </div>
 
@@ -1896,8 +1968,8 @@ const App = {
               </h3>
               <span class="badge-glass-emerald text-xs px-2 py-0.5 rounded-full font-bold">Clients</span>
             </div>
-            <div class="h-64 flex items-center justify-center">
-              <canvas id="chart-customer-types"></canvas>
+            <div class="relative w-full h-64">
+              <canvas id="chart-customer-types" class="w-full h-full block"></canvas>
             </div>
           </div>
         </div>
@@ -1912,7 +1984,7 @@ const App = {
               </h3>
               <span class="badge-glass-rose text-xs px-2 py-0.5 rounded-full font-bold">Low Stock</span>
             </div>
-            <div class="space-y-2.5 max-h-64 overflow-y-auto">
+            <div id="dashboard-low-stock-container" class="space-y-2.5 max-h-64 overflow-y-auto">
               ${this.renderLowStockList(data)}
             </div>
           </div>
@@ -1925,7 +1997,7 @@ const App = {
               </h3>
               <span class="badge-glass-amber text-xs px-2 py-0.5 rounded-full font-bold">Upcoming</span>
             </div>
-            <div class="space-y-2.5 max-h-64 overflow-y-auto">
+            <div id="dashboard-deadlines-container" class="space-y-2.5 max-h-64 overflow-y-auto">
               ${this.renderProjectDeadlines(data)}
             </div>
           </div>
@@ -1938,7 +2010,7 @@ const App = {
               </h3>
               <span class="badge-glass-cyan text-xs px-2 py-0.5 rounded-full font-bold">Live</span>
             </div>
-            <div class="space-y-2.5 max-h-64 overflow-y-auto">
+            <div id="dashboard-activity-container" class="space-y-2.5 max-h-64 overflow-y-auto">
               ${this.renderActivityLogs(data)}
             </div>
           </div>
@@ -1947,16 +2019,6 @@ const App = {
     `;
 
     setTimeout(() => this.initDashboardCharts(data), 50);
-
-    if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(() => {
-        if (this.currentView === 'dashboard' && this.charts) {
-          Object.values(this.charts).forEach(c => {
-            try { c.update(); } catch (e) {}
-          });
-        }
-      });
-    }
   },
 
   setDashboardMonth(month) {
@@ -1976,7 +2038,12 @@ const App = {
 
   setChartYear(year) {
     this.selectedChartYear = year;
-    this.renderCurrentView();
+    const data = (window.db && window.db.data) ? window.db.data : {};
+    if (this.charts && this.charts.monthly) {
+      this.updateDashboardChartsInPlace(data);
+    } else {
+      this.renderCurrentView();
+    }
   },
 
   renderLowStockList(data) {
@@ -2047,6 +2114,12 @@ const App = {
     const textColor = this.currentTheme === 'dark' ? '#cbd5e1' : '#334155';
     const gridColor = this.currentTheme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
+    // Safely destroy existing charts before creating new instances
+    Object.values(this.charts || {}).forEach(c => {
+      try { c.destroy(); } catch (e) {}
+    });
+    this.charts = {};
+
     // Chart 1: Monthly Income vs Expense for selected Year
     const ctxMonthly = document.getElementById('chart-monthly-income-expense')?.getContext('2d');
     if (ctxMonthly) {
@@ -2054,12 +2127,12 @@ const App = {
       const monthIncomes = Array(12).fill(0);
       const monthExpenses = Array(12).fill(0);
 
-      data.transactions.forEach(t => {
+      (data.transactions || []).forEach(t => {
         if ((t.date || '').startsWith(year)) {
           const m = parseInt(t.date.split('-')[1], 10) - 1;
           if (m >= 0 && m < 12) {
-            if (t.type === 'income') monthIncomes[m] += t.amount;
-            else monthExpenses[m] += t.amount;
+            if (t.type === 'income') monthIncomes[m] += (Number(t.amount) || 0);
+            else monthExpenses[m] += (Number(t.amount) || 0);
           }
         }
       });
@@ -2082,6 +2155,7 @@ const App = {
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: { duration: 300 },
           plugins: {
             legend: {
               labels: {
@@ -2117,8 +2191,8 @@ const App = {
     // Chart 2: Category Valuation
     const ctxStockCat = document.getElementById('chart-stock-by-category')?.getContext('2d');
     if (ctxStockCat) {
-      const catLabels = data.categories.map(c => c.name.split(' (')[0]);
-      const catValues = data.categories.map(c => window.db.getCategoryStats(c.id).valuation || 2000000);
+      const catLabels = (data.categories || []).map(c => c.name.split(' (')[0]);
+      const catValues = (data.categories || []).map(c => (window.db && typeof window.db.getCategoryStats === 'function') ? (window.db.getCategoryStats(c.id).valuation || 2000000) : 2000000);
 
       this.charts.stockCat = new Chart(ctxStockCat, {
         type: 'doughnut',
@@ -2134,6 +2208,7 @@ const App = {
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: { duration: 300 },
           plugins: {
             legend: {
               position: 'bottom',
@@ -2172,6 +2247,7 @@ const App = {
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: { duration: 300 },
           plugins: {
             legend: { display: false },
             tooltip: {
@@ -2196,8 +2272,8 @@ const App = {
     // Chart 4: Customers
     const ctxCustomer = document.getElementById('chart-customer-types')?.getContext('2d');
     if (ctxCustomer) {
-      const corp = data.customers.filter(c => c.type === 'corporate').length;
-      const ind = data.customers.filter(c => c.type === 'individual').length;
+      const corp = (data.customers || []).filter(c => c && c.type === 'corporate').length;
+      const ind = (data.customers || []).filter(c => c && c.type === 'individual').length;
 
       this.charts.customers = new Chart(ctxCustomer, {
         type: 'pie',
@@ -2213,6 +2289,7 @@ const App = {
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: { duration: 300 },
           plugins: {
             legend: {
               position: 'bottom',
@@ -2229,6 +2306,71 @@ const App = {
         }
       });
     }
+  },
+
+  updateDashboardChartsInPlace(data) {
+    if (!this.charts) return false;
+    let anyUpdated = false;
+
+    // 1. Monthly Chart
+    if (this.charts.monthly && this.charts.monthly.data && this.charts.monthly.data.datasets) {
+      const year = this.selectedChartYear;
+      const monthIncomes = Array(12).fill(0);
+      const monthExpenses = Array(12).fill(0);
+      (data.transactions || []).forEach(t => {
+        if ((t.date || '').startsWith(year)) {
+          const m = parseInt(t.date.split('-')[1], 10) - 1;
+          if (m >= 0 && m < 12) {
+            if (t.type === 'income') monthIncomes[m] += (Number(t.amount) || 0);
+            else monthExpenses[m] += (Number(t.amount) || 0);
+          }
+        }
+      });
+      if (monthIncomes.every(v => v === 0)) {
+        [15000000, 18000000, 22000000, 20000000, 28000000, 24000000, 31000000, 29000000, 35000000].forEach((v, i) => monthIncomes[i] = v);
+        [11000000, 12500000, 16000000, 14000000, 19000000, 17500000, 22000000, 21000000, 23000000].forEach((v, i) => monthExpenses[i] = v);
+      }
+      if (this.charts.monthly.data.datasets[0]) this.charts.monthly.data.datasets[0].data = monthIncomes;
+      if (this.charts.monthly.data.datasets[1]) this.charts.monthly.data.datasets[1].data = monthExpenses;
+      this.charts.monthly.update('none');
+      anyUpdated = true;
+    }
+
+    // 2. Stock by Category
+    if (this.charts.stockCat && this.charts.stockCat.data && this.charts.stockCat.data.datasets) {
+      const catLabels = (data.categories || []).map(c => c.name.split(' (')[0]);
+      const catValues = (data.categories || []).map(c => (window.db && typeof window.db.getCategoryStats === 'function') ? (window.db.getCategoryStats(c.id).valuation || 2000000) : 2000000);
+      this.charts.stockCat.data.labels = catLabels;
+      if (this.charts.stockCat.data.datasets[0]) this.charts.stockCat.data.datasets[0].data = catValues;
+      this.charts.stockCat.update('none');
+      anyUpdated = true;
+    }
+
+    // 3. Top Stock
+    if (this.charts.topStock && this.charts.topStock.data && this.charts.topStock.data.datasets) {
+      const topItems = (data.products || []).map(p => {
+        const isSn = (p.hasSn === 1 || p.hasSn === true || p.hasSn === '1');
+        const count = isSn 
+          ? (data.productSerials || []).filter(s => s && s.productId === p.id && s.status === 'in_stock').length 
+          : Math.max(0, Number(p.stock !== undefined ? p.stock : (p.stockQty !== undefined ? p.stockQty : 0)) || 0);
+        return { name: p.name.substring(0, 18) + '...', count };
+      }).sort((a, b) => b.count - a.count).slice(0, 5);
+      this.charts.topStock.data.labels = topItems.map(i => i.name);
+      if (this.charts.topStock.data.datasets[0]) this.charts.topStock.data.datasets[0].data = topItems.map(i => i.count);
+      this.charts.topStock.update('none');
+      anyUpdated = true;
+    }
+
+    // 4. Customers
+    if (this.charts.customers && this.charts.customers.data && this.charts.customers.data.datasets) {
+      const corp = (data.customers || []).filter(c => c && c.type === 'corporate').length;
+      const ind = (data.customers || []).filter(c => c && c.type === 'individual').length;
+      if (this.charts.customers.data.datasets[0]) this.charts.customers.data.datasets[0].data = [corp, ind];
+      this.charts.customers.update('none');
+      anyUpdated = true;
+    }
+
+    return anyUpdated;
   },
 
   // --------------------------------------------------------------------------
