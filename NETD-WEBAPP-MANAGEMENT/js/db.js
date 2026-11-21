@@ -134,6 +134,21 @@ const DEFAULT_DATABASE = {
 
   suppliers: [],
 
+  projectCategories: [
+    { id: 'pcat_cctv', name: 'ກ້ອງວົງຈອນປິດ', code: 'CCTV', color: 'emerald', description: 'ງານຕິດຕັ້ງລະບົບກ້ອງວົງຈອນປິດ' },
+    { id: 'pcat_net', name: 'ລະບົບເຄືອຂ່າຍ (Network)', code: 'NET', color: 'sky', description: 'ງານຕິດຕັ້ງລະບົບ Wi-Fi, LAN ແລະ Network Infrastructure' },
+    { id: 'pcat_srv', name: 'ລະບົບ Server & Cloud', code: 'SRV', color: 'indigo', description: 'Server, Storage NAS ແລະ ລະບົບສຳຮອງຂໍ້ມູນ' },
+    { id: 'pcat_soft', name: 'ພັດທະນາເວັບໄຊ & ໂປຣແກຣມ', code: 'SOFT', color: 'purple', description: 'Custom Web Application, Mobile App ແລະ ERP' }
+  ],
+
+  itJobCategories: [
+    { id: 'cat_hardware', key: 'hardware', name: 'ສ້ອມແປງ Hardware', description: 'ກວດເຊັກ ອຸປະກອນ Hardware / PC / Laptop', color: 'blue' },
+    { id: 'cat_cctv_job', key: 'cctv', name: 'ຕິດຕັ້ງ/ແປງ CCTV', description: 'ຕິດຕັ້ງ ຫຼື ແກ້ໄຂລະບົບກ້ອງວົງຈອນປິດ', color: 'amber' },
+    { id: 'cat_printer', key: 'printer', name: 'ແປງປຣິນເຕີ', description: 'ສ້ອມແປງ Printer / Scanner / POS', color: 'purple' },
+    { id: 'cat_network', key: 'network', name: 'ວາງສາຍ Network', description: 'ຕິດຕັ້ງ Wi-Fi / LAN / CCTV', color: 'emerald' },
+    { id: 'cat_software', key: 'software', name: 'Software / Windows', description: 'ລົງ Windows / License / ແກ້ໄວຣັສ', color: 'rose' }
+  ],
+
   // Data tables initialized as clean empty arrays (Live data populated from Cloudflare D1 / Supabase)
   products: [],
   productSerials: [],
@@ -294,6 +309,12 @@ function toSnakeForRemote(table, record) {
     if (record.key) {
       snake['key'] = record.key;
       snake.category_key = record.key;
+    }
+  }
+  if (table === 'project_categories' || table === 'projectCategories') {
+    if (!snake.color) snake.color = 'sky';
+    if (!snake.code && snake.name) {
+      snake.code = snake.name.substring(0, 4).toUpperCase();
     }
   }
   if (table === 'product_serials' || table === 'productSerials') {
@@ -536,7 +557,7 @@ function hasTableDataChanged(prevList, nextList) {
   return false;
 }
 
-function safeMergeRecords(currentLocalList, remoteList, deletedSet) {
+function safeMergeRecords(currentLocalList, remoteList, deletedSet, clientKey) {
   const remoteMap = new Map();
   const remoteDocMap = new Map();
   const remotePoMap = new Map();
@@ -614,6 +635,7 @@ function safeMergeRecords(currentLocalList, remoteList, deletedSet) {
         if (!rem.date && loc.date) merged.date = loc.date;
         if (!rem.docDate && loc.docDate) merged.docDate = loc.docDate;
         if (!rem.customerName && loc.customerName) merged.customerName = loc.customerName;
+        if (!rem.description && loc.description) merged.description = loc.description;
         if (!rem.sn && loc.sn) merged.sn = loc.sn;
         if (!rem.serialNumber && loc.serialNumber) merged.serialNumber = loc.serialNumber;
         if ((rem.profit === undefined || rem.profit === null || rem.profit === 0) && loc.profit) merged.profit = loc.profit;
@@ -644,8 +666,14 @@ function safeMergeRecords(currentLocalList, remoteList, deletedSet) {
         mergedList.push(merged);
       } else {
         // Local record not found in remote:
-        // ONLY preserve and sync if it was created locally offline as an unsynced draft
-        if (loc._isLocalDraft === true) {
+        const isMasterLookup = (clientKey === 'projectCategories' || clientKey === 'itJobCategories' || clientKey === 'categories' || clientKey === 'brands');
+        const isRecentlyModified = loc._localModifiedAt && (Date.now() - loc._localModifiedAt < 300000); // 5 minutes
+
+        // PRESERVE local record if:
+        // 1. It is a local draft (_isLocalDraft === true)
+        // 2. It was modified/created recently (< 5 mins)
+        // 3. It is a master lookup category (categories, brands, projectCategories, itJobCategories) which must NEVER be auto-purged by empty remote!
+        if (loc._isLocalDraft === true || isRecentlyModified || isMasterLookup) {
           mergedList.push(loc);
           unsyncedLocals.push(loc);
         } else {
@@ -727,6 +755,15 @@ class DatabaseManager {
     this.data = this.loadLocal();
     this.connectionStatus = 'offline';
     this.listeners = [];
+
+    // Auto-clean any accidentally purged project categories or it job categories from deletedSet
+    try {
+      const deletedIds = this.getDeletedIds();
+      const filtered = deletedIds.filter(id => !id.startsWith('pcat_') && !id.startsWith('itcat_'));
+      if (filtered.length !== deletedIds.length) {
+        localStorage.setItem('netd_deleted_ids', JSON.stringify(filtered));
+      }
+    } catch (e) {}
 
     // Restore product images from persistent image cache
     if (this.data && Array.isArray(this.data.products)) {
@@ -1185,6 +1222,10 @@ class DatabaseManager {
           employees: parsed.employees || [DEFAULT_DATABASE.employees[0]],
           customers: Array.isArray(parsed.customers) ? parsed.customers : [],
           suppliers: Array.isArray(parsed.suppliers) ? parsed.suppliers : [],
+          categories: Array.isArray(parsed.categories) && parsed.categories.length ? parsed.categories : DEFAULT_DATABASE.categories,
+          brands: Array.isArray(parsed.brands) && parsed.brands.length ? parsed.brands : DEFAULT_DATABASE.brands,
+          projectCategories: Array.isArray(parsed.projectCategories) && parsed.projectCategories.length ? parsed.projectCategories : (DEFAULT_DATABASE.projectCategories || []),
+          itJobCategories: Array.isArray(parsed.itJobCategories) && parsed.itJobCategories.length ? parsed.itJobCategories : (DEFAULT_DATABASE.itJobCategories || []),
           products: Array.isArray(parsed.products) ? parsed.products : [],
           productSerials: Array.isArray(parsed.productSerials) ? parsed.productSerials : [],
           purchaseOrders: Array.isArray(parsed.purchaseOrders) ? parsed.purchaseOrders : [],
@@ -1708,7 +1749,7 @@ class DatabaseManager {
             .filter(item => item && item.id && !ALL_MOCK_IDS.has(item.id) && !deletedSet.has(item.id) && !deletedSet.has(item.docNumber) && !deletedSet.has(item.poNumber));
 
           const prevLocal = this.data[clientKey] || [];
-          const merged = safeMergeRecords(prevLocal, normalizedRemote, deletedSet);
+          const merged = safeMergeRecords(prevLocal, normalizedRemote, deletedSet, clientKey);
 
           if (merged.hasUnsyncedLocal) {
             anyUnsynced = true;
@@ -1755,7 +1796,7 @@ class DatabaseManager {
             .filter(item => item && item.id && !ALL_MOCK_IDS.has(item.id) && !deletedSet.has(item.id) && !deletedSet.has(item.docNumber) && !deletedSet.has(item.poNumber));
 
           const prevLocal = this.data[clientKey] || [];
-          const merged = safeMergeRecords(prevLocal, normalizedRemote, deletedSet);
+          const merged = safeMergeRecords(prevLocal, normalizedRemote, deletedSet, clientKey);
 
           if (merged.hasUnsyncedLocal) {
             anyUnsynced = true;
@@ -2123,8 +2164,12 @@ class DatabaseManager {
   }
 
   addCategory(category) {
-    category.id = 'cat_' + Date.now();
+    category.id = category.id || ('cat_' + Date.now());
+    this.unmarkDeleted(category.id);
+    category._isLocalDraft = true;
+    category._localModifiedAt = Date.now();
     this.data.categories.push(category);
+    this.saveLocal();
     this.syncRecordToRemote('categories', category);
     this.notify();
     return category;
@@ -2133,9 +2178,14 @@ class DatabaseManager {
   updateCategory(id, updated) {
     const idx = this.data.categories.findIndex(c => c.id === id);
     if (idx !== -1) {
+      this.unmarkDeleted(id);
       const oldCat = this.data.categories[idx];
       const oldName = oldCat.name;
-      this.data.categories[idx] = { ...oldCat, ...updated };
+      this.data.categories[idx] = { 
+        ...oldCat, 
+        ...updated,
+        _localModifiedAt: Date.now()
+      };
       
       // If category name was updated, update matching brands and products
       if (updated.name && updated.name !== oldName) {
@@ -2150,12 +2200,15 @@ class DatabaseManager {
         }
       }
 
+      this.saveLocal();
       this.syncRecordToRemote('categories', this.data.categories[idx]);
       this.notify();
     }
   }
 
   deleteCategory(id) {
+    if (!id) return;
+    this.markAsDeleted(id);
     const cat = this.data.categories.find(c => c.id === id);
     const catName = cat ? cat.name : null;
     this.data.categories = this.data.categories.filter(c => c.id !== id);
@@ -2179,6 +2232,7 @@ class DatabaseManager {
     }
 
     this.deleteFromRemote('categories', id);
+    this.saveLocal();
     this.notify();
   }
 
@@ -3082,7 +3136,11 @@ class DatabaseManager {
   addProjectCategory(cat) {
     if (!this.data.projectCategories) this.data.projectCategories = [];
     cat.id = cat.id || ('pcat_' + Date.now());
+    this.unmarkDeleted(cat.id);
+    cat._isLocalDraft = true;
+    cat._localModifiedAt = Date.now();
     this.data.projectCategories.push(cat);
+    this.saveLocal();
     this.syncRecordToRemote('project_categories', cat);
     this.notify();
     return cat;
@@ -3092,7 +3150,13 @@ class DatabaseManager {
     if (!this.data.projectCategories) this.data.projectCategories = [];
     const idx = this.data.projectCategories.findIndex(c => c.id === id);
     if (idx !== -1) {
-      this.data.projectCategories[idx] = { ...this.data.projectCategories[idx], ...updated };
+      this.unmarkDeleted(id);
+      this.data.projectCategories[idx] = { 
+        ...this.data.projectCategories[idx], 
+        ...updated,
+        _localModifiedAt: Date.now()
+      };
+      this.saveLocal();
       this.syncRecordToRemote('project_categories', this.data.projectCategories[idx]);
       this.notify();
       return this.data.projectCategories[idx];
@@ -3101,9 +3165,12 @@ class DatabaseManager {
   }
 
   deleteProjectCategory(id) {
+    if (!id) return;
+    this.markAsDeleted(id);
     if (!this.data.projectCategories) return;
     this.data.projectCategories = this.data.projectCategories.filter(c => c.id !== id);
     this.deleteFromRemote('project_categories', id);
+    this.saveLocal();
     this.notify();
   }
 
@@ -3256,8 +3323,12 @@ class DatabaseManager {
   addItJobCategory(cat) {
     if (!this.data.itJobCategories) this.data.itJobCategories = [];
     cat.id = cat.id || ('itcat_' + Date.now());
-    cat.key = cat.key || cat.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    cat.key = cat.key || (cat.name ? cat.name.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'job_cat');
+    this.unmarkDeleted(cat.id);
+    cat._isLocalDraft = true;
+    cat._localModifiedAt = Date.now();
     this.data.itJobCategories.push(cat);
+    this.saveLocal();
     this.syncRecordToRemote('it_job_categories', cat);
     this.notify();
     return cat;
@@ -3267,7 +3338,13 @@ class DatabaseManager {
     if (!this.data.itJobCategories) this.data.itJobCategories = [];
     const idx = this.data.itJobCategories.findIndex(c => c.id === id);
     if (idx !== -1) {
-      this.data.itJobCategories[idx] = { ...this.data.itJobCategories[idx], ...updated };
+      this.unmarkDeleted(id);
+      this.data.itJobCategories[idx] = { 
+        ...this.data.itJobCategories[idx], 
+        ...updated,
+        _localModifiedAt: Date.now()
+      };
+      this.saveLocal();
       this.syncRecordToRemote('it_job_categories', this.data.itJobCategories[idx]);
       this.notify();
       return this.data.itJobCategories[idx];
@@ -3276,9 +3353,12 @@ class DatabaseManager {
   }
 
   deleteItJobCategory(id) {
+    if (!id) return;
+    this.markAsDeleted(id);
     if (!this.data.itJobCategories) return;
     this.data.itJobCategories = this.data.itJobCategories.filter(c => c.id !== id);
     this.deleteFromRemote('it_job_categories', id);
+    this.saveLocal();
     this.notify();
   }
 
@@ -3474,8 +3554,12 @@ class DatabaseManager {
   }
 
   addBrand(brand) {
-    brand.id = 'br_' + Date.now();
+    brand.id = brand.id || ('br_' + Date.now());
+    this.unmarkDeleted(brand.id);
+    brand._isLocalDraft = true;
+    brand._localModifiedAt = Date.now();
     this.data.brands.push(brand);
+    this.saveLocal();
     this.syncRecordToRemote('brands', brand);
     this.notify();
     return brand;
@@ -3484,7 +3568,13 @@ class DatabaseManager {
   updateBrand(id, updated) {
     const idx = this.data.brands.findIndex(b => b.id === id);
     if (idx !== -1) {
-      this.data.brands[idx] = { ...this.data.brands[idx], ...updated };
+      this.unmarkDeleted(id);
+      this.data.brands[idx] = { 
+        ...this.data.brands[idx], 
+        ...updated,
+        _localModifiedAt: Date.now()
+      };
+      this.saveLocal();
       this.syncRecordToRemote('brands', this.data.brands[idx]);
       this.notify();
       return this.data.brands[idx];
@@ -3493,8 +3583,11 @@ class DatabaseManager {
   }
 
   deleteBrand(id) {
+    if (!id) return;
+    this.markAsDeleted(id);
     this.data.brands = this.data.brands.filter(b => b.id !== id);
     this.deleteFromRemote('brands', id);
+    this.saveLocal();
     this.notify();
   }
 
