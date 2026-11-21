@@ -30,3 +30,9 @@ INSERT INTO public.project_categories (id, name, code, color, description) VALUE
 ('pcat_srv', 'ລະບົບ Server & Cloud', 'SRV', 'indigo', 'Server, Storage NAS ແລະ ລະບົບສຳຮອງຂໍ້ມູນ'),
 ('pcat_soft', 'ພັດທະນາເວັບໄຊ & ໂປຣແກຣມ', 'SOFT', 'purple', 'Custom Web Application, Mobile App ແລະ ERP')
 ON CONFLICT (id) DO NOTHING;
+
+-- 6. Ensure documents table has optional columns for Quotations, Delivery, and PO mirror documents
+ALTER TABLE IF EXISTS public.documents ADD COLUMN IF NOT EXISTS shipping_cost REAL DEFAULT 0;
+ALTER TABLE IF EXISTS public.documents ADD COLUMN IF NOT EXISTS supplier_id TEXT;
+ALTER TABLE IF EXISTS public.documents ADD COLUMN IF NOT EXISTS supplier_name TEXT;
+ALTER TABLE IF EXISTS public.documents ADD COLUMN IF NOT EXISTS valid_until DATE;

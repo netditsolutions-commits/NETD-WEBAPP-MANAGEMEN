@@ -219,6 +219,9 @@ CREATE TABLE IF NOT EXISTS public.documents (
     items_json TEXT DEFAULT '[]',
     notes TEXT,
     terms_conditions TEXT,
+    shipping_cost REAL DEFAULT 0,
+    supplier_id TEXT,
+    supplier_name TEXT,
     created_by TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
