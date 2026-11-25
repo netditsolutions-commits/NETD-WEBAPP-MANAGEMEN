@@ -397,6 +397,29 @@ const ExportService = {
           : 'ກະລຸນາຊຳລະເງິນຕາມກຳນົດເວລາ ແລະ ອ້າງອີງເລກທີໃບເກັບເງິນທຸກຄັ້ງທີ່ໂອນ.');
     const notesHtml = this.formatRichDocText(rawNotes);
 
+    // Format multi-line bank accounts neatly so currency labels (ລາວກີບ/LAK, ໄທບາດ/THB...) and numbers align vertically
+    const rawBankAccLines = String(settings.bankAccountNo || '010-12-00-01234567-001')
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean);
+    const hasLabeledAccLines = rawBankAccLines.some(l => l.includes(':'));
+    const bankAccHtml = hasLabeledAccLines
+      ? `<table style="width: auto; margin: 0; border-collapse: collapse;">
+          ${rawBankAccLines.map(line => {
+            const colonIdx = line.indexOf(':');
+            if (colonIdx !== -1) {
+              const lbl = line.slice(0, colonIdx + 1).trim();
+              const num = line.slice(colonIdx + 1).trim();
+              return `<tr>
+                <td style="padding: 0 8px 0 0; font-weight: 700; color: #0284c7; white-space: nowrap; font-size: 11.5px; line-height: 1.5; border: none;">${lbl}</td>
+                <td style="padding: 0; font-family: monospace; font-weight: 700; color: #0284c7; white-space: nowrap; font-size: 12px; line-height: 1.5; border: none;">${num}</td>
+              </tr>`;
+            }
+            return `<tr><td colspan="2" style="padding: 0; font-family: monospace; font-weight: 700; color: #0284c7; white-space: nowrap; font-size: 12px; line-height: 1.5; border: none;">${line}</td></tr>`;
+          }).join('')}
+        </table>`
+      : `<div style="font-family: monospace; font-weight: 700; color: #0284c7; font-size: 12px; line-height: 1.5;">${rawBankAccLines.join('<br>')}</div>`;
+
     const printHtml = `
       <!DOCTYPE html>
       <html>
@@ -641,10 +664,13 @@ const ExportService = {
                 <div style="font-weight: bold; font-size: 11px; color: #0284c7; margin-bottom: 4px; text-transform: uppercase;">💳 ຂໍ້ມູນການຊຳລະ / ບັນຊີທະນາຄານ (Payment Information):</div>
                 <div style="display: flex; gap: 12px; align-items: center;">
                   ${settings.bankQrUrl ? `<img src="${settings.bankQrUrl}" style="height: 64px; width: 64px; object-fit: contain; border-radius: 4px; border: 1px solid #cbd5e1; background: #fff; padding: 2px;" alt="Bank QR" />` : ''}
-                  <div style="font-size: 11px; line-height: 1.4;">
-                    <div style="font-weight: bold; color: #0f172a; font-size: 11.5px;">${settings.bankName || 'ທະນາຄານການຄ້າຕ່າງປະເທດລາວ (BCEL)'}</div>
-                    <div>ເລກບັນຊີ: <strong style="font-family: monospace; font-size: 12px; color: #0284c7; white-space: pre-line; line-height: 1.4;">${(settings.bankAccountNo || '010-12-00-01234567-001').replace(/\n/g, '<br>')}</strong></div>
-                    <div>ຊື່ບັນຊີ: <strong>${settings.bankAccountName || settings.shopName}</strong></div>
+                  <div style="font-size: 11px; line-height: 1.45;">
+                    <div style="font-weight: bold; color: #0f172a; font-size: 11.5px; margin-bottom: 2px;">${settings.bankName || 'ທະນາຄານການຄ້າຕ່າງປະເທດລາວ (BCEL)'}</div>
+                    <div style="display: flex; align-items: flex-start; gap: 6px;">
+                      <span style="white-space: nowrap; flex-shrink: 0; line-height: 1.5;">ເລກບັນຊີ:</span>
+                      <div>${bankAccHtml}</div>
+                    </div>
+                    <div style="margin-top: 1px;">ຊື່ບັນຊີ: <strong>${settings.bankAccountName || settings.shopName}</strong></div>
                   </div>
                 </div>
               </div>
